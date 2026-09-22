@@ -16,8 +16,9 @@
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
   },
-  "devDependencies": {
+  "dependencies": {
     "esbuild": "^0.20.1",
-    "typescript": "^5.4.2"
+    "typescript": "^5.4.2",
+    "@types/node": "^26.6.2"
   }
 }

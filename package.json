@@ -11,6 +11,8 @@
   "scripts": {
     "dev": "concurrently -k -n \"api,dashboard\" -c \"cyan,magenta\" \"npm run dev -w @meow-analytics/api\" \"npm run dev -w @meow-analytics/dashboard\"",
     "build": "npm run build -w @meow-analytics/shared && npm run build -w @meow-analytics/config && npm run build -w @meow-analytics/database && npm run build -w @meow-analytics/sdk && npm run build -w @meow-analytics/api && npm run build -w @meow-analytics/dashboard",
+    "build:api": "npm run build -w @meow-analytics/shared && npm run build -w @meow-analytics/config && npm run build -w @meow-analytics/database && npm run build -w @meow-analytics/sdk && npm run build -w @meow-analytics/api",
+    "build:dashboard": "npm run build -w @meow-analytics/shared && npm run build -w @meow-analytics/dashboard",
     "typecheck": "tsc -b",
     "lint": "tsc -b",
     "test": "vitest run",
@@ -24,10 +26,10 @@
   "devDependencies": {
     "concurrently": "^8.2.2",
     "tsx": "^4.7.1",
-    "typescript": "^5.4.2",
     "vitest": "^1.4.0"
   },
   "dependencies": {
-    "@types/node": "^26.6.2"
+    "@types/node": "^26.6.2",
+    "typescript": "^5.4.2"
   }
 }

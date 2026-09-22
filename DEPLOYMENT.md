@@ -94,7 +94,7 @@ openssl rand -hex 24
 2. Select your repository:
    - **Environment**: `Node`
    - **Plan**: `Free`
-   - **Build Command**: `npm install --include=dev && npm run build`
+   - **Build Command**: `npm install && npm run build:api`
    - **Start Command**: `npm run start -w @meow-analytics/api`
    - **Health Check Path**: `/api/health`
 3. Under **Environment Variables**, add the variables from Step 2.
@@ -116,7 +116,7 @@ curl https://meow-analytics-api.onrender.com/api/ready
 1. In Render Dashboard, click **New +** -> **Static Site**.
 2. Select the repository:
    - **Name**: `meow-analytics-dashboard`
-   - **Build Command**: `npm install --include=dev && npm run build -w @meow-analytics/shared && npm run build -w @meow-analytics/dashboard`
+   - **Build Command**: `npm install && npm run build:dashboard`
    - **Publish Directory**: `apps/dashboard/dist`
 3. Under **Environment Variables**:
    - `VITE_API_URL`: `https://meow-analytics-api.onrender.com` (your API service URL)
