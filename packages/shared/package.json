@@ -17,6 +17,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@types/node": "^26.6.2",
     "zod": "^3.22.4"
   },
   "devDependencies": {

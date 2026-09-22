@@ -23,6 +23,7 @@
     "@electric-sql/pglite": "^0.2.14",
     "@meow-analytics/config": "*",
     "@meow-analytics/shared": "*",
+    "@types/node": "^26.6.2",
     "drizzle-orm": "^0.30.10",
     "pg": "^8.11.5"
   },

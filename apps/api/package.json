@@ -17,6 +17,7 @@
     "@meow-analytics/config": "*",
     "@meow-analytics/database": "*",
     "@meow-analytics/shared": "*",
+    "@types/node": "^26.6.2",
     "drizzle-orm": "^0.30.10",
     "fastify": "^4.26.2",
     "zod": "^3.22.4"

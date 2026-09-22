@@ -26,5 +26,8 @@
     "tsx": "^4.7.1",
     "typescript": "^5.4.2",
     "vitest": "^1.4.0"
+  },
+  "dependencies": {
+    "@types/node": "^26.6.2"
   }
 }
