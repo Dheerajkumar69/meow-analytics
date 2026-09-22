@@ -1,20 +1,42 @@
 # Meow Analytics
 
-> Self-hosted, lightweight, privacy-conscious web analytics platform.
+> Production-grade, privacy-conscious, lightweight web analytics platform.
 
-This repository contains **Phase 1: Foundation, Monorepo, API, Database & Project Management**.
+Meow Analytics is an enterprise-ready, open-source analytics platform featuring a robust analytical query engine, privacy-conscious visitor hashing, Core Web Vitals performance tracking, conversion funnels, cohort retention, and an intuitive, dense dashboard interface.
 
 ---
 
-## Architecture Overview
+## Key Features
 
-Meow Analytics is organized as a modular TypeScript monorepo using npm workspaces:
+* **Authoritative Analytics Engine**: Standardized definitions for Visitors, Sessions, Page Views, Bounce Rate, and Duration across API, charts, and exports.
+* **Real-Time Pulse**: Live online visitors, 30-minute minute-by-minute activity timeline sparkline, and real-time incoming pageview/event stream.
+* **Traffic & Acquisition**: Organic, Direct, Referral, Social, Email, and Paid channels with full UTM campaign drilldown.
+* **Audience Demographics**: Privacy-preserving country geography, device type, operating systems, and browsers.
+* **Content Performance**: Top pages, landing pages (session entry), exit pages (session termination), and domain hostnames.
+* **Conversion Funnels**: Multi-step sequential conversion analysis with step-to-step drop-off rates.
+* **Cohort Retention**: Day, week, and month cohort retention heatmaps tracking longitudinal visitor return rates.
+* **Real User Performance (Core Web Vitals)**: P50, P75, P90, P95, and P99 percentiles for LCP, INP, CLS, FCP, and TTFB.
+* **Frontend Error Tracking**: Error fingerprinting, occurrence counts, affected visitors, and stack diagnostics.
+* **Analytics Explorer**: Ad-hoc query builder across any analytical dimension with instant CSV export.
+* **Multi-Format Export**: Full JSON and CSV export respecting all active filters and date ranges.
+* **Strict Project Isolation**: Multi-tenant authorization boundaries guaranteeing zero data leakage between projects.
 
-* **`apps/api`**: Fastify REST API providing project, domain, and API key management, health probes, centralized error handling, and structured logging.
-* **`apps/dashboard`**: React 18 + Vite dashboard with a bespoke design system (dark/light mode support), project selector, and setup guidance.
-* **`packages/database`**: PostgreSQL schema, Drizzle ORM queries, migration runner, and seeding scripts.
-* **`packages/shared`**: Common types, Zod schemas, domain normalization, and cryptographic utilities.
-* **`packages/config`**: Strict environment variable validation using Zod.
+---
+
+## Monorepo Architecture
+
+```
+meow-analytics/
+├── apps/
+│   ├── api/          # Fastify REST API, ingestion collector, aggregation & analytics routes
+│   └── dashboard/    # React 18 + Vite SPA with bespoke design system & charts
+├── packages/
+│   ├── shared/       # Shared TypeScript schemas, Zod validators, and analytics types
+│   ├── config/       # Environment variable validation and defaults
+│   ├── database/     # PostgreSQL schema, Drizzle ORM queries, migrations & seeds
+│   └── sdk/          # Lightweight (<23KB) browser tracking script (sendBeacon/fetch)
+└── tests/            # 29 test suites with 185 unit, integration, and load tests
+```
 
 ---
 
@@ -33,7 +55,7 @@ Copy `.env.example` to `.env`:
 cp .env.example .env
 ```
 
-Ensure your `.env` contains:
+Ensure `.env` contains:
 ```env
 NODE_ENV=development
 PORT=3001
@@ -45,31 +67,24 @@ CORS_ORIGINS=http://localhost:5173,http://localhost:3000
 LOG_LEVEL=info
 ```
 
-*(Note: For isolated testing or local development without Docker, `DATABASE_URL=memory://` is natively supported via embedded PGlite).*
+*(Note: For isolated testing without PostgreSQL, `DATABASE_URL=memory://` is natively supported via embedded PGlite).*
 
-### 3. Local PostgreSQL (Optional)
-
-Start PostgreSQL via Docker Compose:
-
-```bash
-docker compose up -d
-```
-
-### 4. Install Dependencies & Build
+### 3. Build & Run Tests
 
 ```bash
 npm install
 npm run build
+npm test
 ```
 
-### 5. Run Migrations & Seed Sample Project
+### 4. Run Migrations & Seed Sample Project
 
 ```bash
 npm run db:migrate
 npm run db:seed
 ```
 
-### 6. Start Development Servers
+### 5. Start Development Servers
 
 ```bash
 npm run dev
@@ -86,7 +101,7 @@ npm run dev
 |---|---|
 | `npm run dev` | Start API and Dashboard dev servers concurrently |
 | `npm run build` | Build all packages and applications |
-| `npm run test` | Run Vitest unit, integration, and security test suites |
+| `npm test` | Run all 29 test suites across the monorepo |
 | `npm run typecheck` | Run TypeScript type checks across all workspaces |
 | `npm run lint` | Verify monorepo code consistency |
 | `npm run db:migrate` | Execute database schema migrations |
@@ -94,9 +109,10 @@ npm run dev
 
 ---
 
-## Security Highlights
+## Documentation
 
-* **No Plaintext API Keys**: Generated API keys (`mk_live_...`) are returned exactly once to the caller. The database stores only SHA-256 hashes and key prefixes.
-* **Timing-Safe Admin Auth**: Header comparisons use constant-time algorithms to prevent timing attacks.
-* **Centralized Error Handling**: Stack traces, environment variables, and database credentials are never exposed in production responses.
-* **CORS Restricted**: Controlled origin whitelisting via `CORS_ORIGINS`.
+* [Analytics Semantics & Calculations](file:///mnt/slow/actualprojects/meow-analytics/ANALYTICS_SEMANTICS.md)
+* [Data Retention & Cleanup Policy](file:///mnt/slow/actualprojects/meow-analytics/DATA_RETENTION.md)
+* [Privacy & IP Minimization Policy](file:///mnt/slow/actualprojects/meow-analytics/PRIVACY.md)
+* [Security Model & Threat Defenses](file:///mnt/slow/actualprojects/meow-analytics/SECURITY.md)
+* [Production Deployment Blueprint](file:///mnt/slow/actualprojects/meow-analytics/DEPLOYMENT.md)

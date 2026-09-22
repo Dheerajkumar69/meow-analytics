@@ -14,19 +14,28 @@ import {
   Settings,
   X,
   LucideIcon,
+  Radio,
+  GitMerge,
+  Repeat,
 } from 'lucide-react';
 
 export type NavItemKey =
   | 'overview'
+  | 'realtime'
   | 'traffic'
+  | 'audience'
+  | 'content'
+  | 'events'
+  | 'funnels'
+  | 'retention'
+  | 'performance'
+  | 'errors'
+  | 'explore'
   | 'pages'
   | 'visitors'
   | 'sources'
   | 'geography'
   | 'devices'
-  | 'events'
-  | 'performance'
-  | 'errors'
   | 'projects'
   | 'settings';
 
@@ -37,19 +46,43 @@ interface SidebarProps {
   onCloseMobile?: () => void;
 }
 
-const navItems: { key: NavItemKey; label: string; icon: LucideIcon }[] = [
-  { key: 'overview', label: 'Overview', icon: LayoutDashboard },
-  { key: 'traffic', label: 'Traffic', icon: TrendingUp },
-  { key: 'pages', label: 'Pages', icon: FileText },
-  { key: 'visitors', label: 'Visitors', icon: Users },
-  { key: 'sources', label: 'Sources', icon: Compass },
-  { key: 'geography', label: 'Geography', icon: Globe },
-  { key: 'devices', label: 'Devices', icon: Laptop },
-  { key: 'events', label: 'Events', icon: Zap },
-  { key: 'performance', label: 'Performance', icon: Gauge },
-  { key: 'errors', label: 'Errors', icon: AlertTriangle },
-  { key: 'projects', label: 'Projects', icon: FolderKanban },
-  { key: 'settings', label: 'Settings', icon: Settings },
+const navSections: {
+  title?: string;
+  items: { key: NavItemKey; label: string; icon: LucideIcon; badge?: string }[];
+}[] = [
+  {
+    title: 'Analytics',
+    items: [
+      { key: 'overview', label: 'Overview', icon: LayoutDashboard },
+      { key: 'realtime', label: 'Realtime', icon: Radio, badge: 'LIVE' },
+      { key: 'traffic', label: 'Traffic', icon: TrendingUp },
+      { key: 'audience', label: 'Audience', icon: Users },
+      { key: 'content', label: 'Content', icon: FileText },
+      { key: 'events', label: 'Events', icon: Zap },
+    ],
+  },
+  {
+    title: 'Behavior',
+    items: [
+      { key: 'funnels', label: 'Funnels', icon: GitMerge },
+      { key: 'retention', label: 'Retention', icon: Repeat },
+    ],
+  },
+  {
+    title: 'Diagnostics',
+    items: [
+      { key: 'performance', label: 'Performance', icon: Gauge },
+      { key: 'errors', label: 'Errors', icon: AlertTriangle },
+      { key: 'explore', label: 'Explore', icon: Compass },
+    ],
+  },
+  {
+    title: 'Manage',
+    items: [
+      { key: 'projects', label: 'Projects', icon: FolderKanban },
+      { key: 'settings', label: 'Settings', icon: Settings },
+    ],
+  },
 ];
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -129,7 +162,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
             <div>
               <span style={{ fontWeight: 700, fontSize: '0.95rem', letterSpacing: '-0.02em' }}>Meow Analytics</span>
-              <span style={{ display: 'block', fontSize: '0.7rem', color: 'var(--color-text-muted)', lineHeight: 1 }}>Phase 5 Dashboard</span>
+              <span style={{ display: 'block', fontSize: '0.7rem', color: 'var(--color-text-muted)', lineHeight: 1 }}>Production Platform</span>
             </div>
           </div>
 
@@ -144,58 +177,89 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
         </div>
 
-        {/* Navigation */}
+        {/* Navigation Sections */}
         <nav
           style={{
             flex: 1,
             padding: 'var(--space-3) var(--space-2)',
             display: 'flex',
             flexDirection: 'column',
-            gap: 'var(--space-1)',
+            gap: 'var(--space-3)',
             overflowY: 'auto',
           }}
         >
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = activeTab === item.key;
-            return (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => handleItemClick(item.key)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 'var(--space-3)',
-                  padding: 'var(--space-2) var(--space-3)',
-                  borderRadius: 'var(--radius-md)',
-                  backgroundColor: isActive ? 'var(--color-surface-hover)' : 'transparent',
-                  color: isActive ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
-                  fontWeight: isActive ? 600 : 400,
-                  fontSize: '0.85rem',
-                  border: 'none',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  width: '100%',
-                  transition: 'all var(--transition-fast)',
-                }}
-              >
-                <Icon size={16} />
-                <span>{item.label}</span>
-                {isActive && (
-                  <div
+          {navSections.map((sec, secIdx) => (
+            <div key={secIdx} style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              {sec.title && (
+                <span
+                  style={{
+                    padding: 'var(--space-1) var(--space-3)',
+                    fontSize: '0.6875rem',
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em',
+                    color: 'var(--color-text-muted)',
+                  }}
+                >
+                  {sec.title}
+                </span>
+              )}
+              {sec.items.map((item) => {
+                const Icon = item.icon;
+                const isActive = activeTab === item.key;
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => handleItemClick(item.key)}
                     style={{
-                      marginLeft: 'auto',
-                      width: '6px',
-                      height: '6px',
-                      borderRadius: '50%',
-                      backgroundColor: 'var(--color-accent)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 'var(--space-3)',
+                      padding: 'var(--space-2) var(--space-3)',
+                      borderRadius: 'var(--radius-md)',
+                      backgroundColor: isActive ? 'var(--color-surface-hover)' : 'transparent',
+                      color: isActive ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
+                      fontWeight: isActive ? 600 : 400,
+                      fontSize: '0.85rem',
+                      border: 'none',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      width: '100%',
+                      transition: 'all var(--transition-fast)',
                     }}
-                  />
-                )}
-              </button>
-            );
-          })}
+                  >
+                    <Icon size={16} />
+                    <span>{item.label}</span>
+                    {item.badge && (
+                      <span
+                        className="badge badge-accent"
+                        style={{
+                          fontSize: '0.625rem',
+                          padding: '1px 5px',
+                          marginLeft: 'auto',
+                          marginRight: isActive ? 'var(--space-2)' : 0,
+                        }}
+                      >
+                        {item.badge}
+                      </span>
+                    )}
+                    {isActive && (
+                      <div
+                        style={{
+                          marginLeft: item.badge ? '0' : 'auto',
+                          width: '6px',
+                          height: '6px',
+                          borderRadius: '50%',
+                          backgroundColor: 'var(--color-accent)',
+                        }}
+                      />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
         </nav>
 
         {/* Footer Info */}
@@ -210,8 +274,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
             justifyContent: 'space-between',
           }}
         >
-          <span>v0.5.0</span>
-          <span className="badge badge-accent">Phase 5</span>
+          <span>v1.0.0</span>
+          <span className="badge badge-accent">Production</span>
         </div>
       </aside>
     </>

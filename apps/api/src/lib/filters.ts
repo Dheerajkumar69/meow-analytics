@@ -60,6 +60,28 @@ function buildSingleCondition(table: 'page_views' | 'sessions' | 'events', claus
     }
   }
 
+  // Special handling for referrer: check both raw referrer and referrer_hostname
+  if (field === 'referrer') {
+    if (table === 'sessions') {
+      const col = sql`referrer_hostname`;
+      switch (operator) {
+        case 'equals': return sql`(${col} = ${value} OR referrer_url = ${value})`;
+        case 'not_equals': return sql`(${col} != ${value} AND (referrer_url IS NULL OR referrer_url != ${value}))`;
+        case 'contains': return sql`(${col} ILIKE ${`%${value}%`} OR referrer_url ILIKE ${`%${value}%`})`;
+        case 'starts_with': return sql`(${col} ILIKE ${`${value}%`} OR referrer_url ILIKE ${`${value}%`})`;
+        case 'ends_with': return sql`(${col} ILIKE ${`%${value}`} OR referrer_url ILIKE ${`%${value}`})`;
+      }
+    } else {
+      switch (operator) {
+        case 'equals': return sql`(referrer = ${value} OR referrer_hostname = ${value} OR referrer_url = ${value})`;
+        case 'not_equals': return sql`(referrer != ${value} AND referrer_hostname != ${value} AND (referrer_url IS NULL OR referrer_url != ${value}))`;
+        case 'contains': return sql`(referrer ILIKE ${`%${value}%`} OR referrer_hostname ILIKE ${`%${value}%`} OR referrer_url ILIKE ${`%${value}%`})`;
+        case 'starts_with': return sql`(referrer ILIKE ${`${value}%`} OR referrer_hostname ILIKE ${`${value}%`} OR referrer_url ILIKE ${`${value}%`})`;
+        case 'ends_with': return sql`(referrer ILIKE ${`%${value}`} OR referrer_hostname ILIKE ${`%${value}`} OR referrer_url ILIKE ${`%${value}`})`;
+      }
+    }
+  }
+
   const colExpr = getColumnExpr(table, field);
   if (!colExpr) {
     return null;

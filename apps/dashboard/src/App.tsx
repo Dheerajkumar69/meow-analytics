@@ -3,6 +3,13 @@ import { Sidebar, NavItemKey } from './layout/Sidebar.js';
 import { TopNav } from './layout/TopNav.js';
 import { EmptyAnalytics } from './components/EmptyAnalytics.js';
 import { OverviewView } from './pages/OverviewView.js';
+import { TrafficView } from './pages/TrafficView.js';
+import { AudienceView } from './pages/AudienceView.js';
+import { ContentView } from './pages/ContentView.js';
+import { RealtimeView } from './pages/RealtimeView.js';
+import { ExploreView } from './pages/ExploreView.js';
+import { FunnelsView } from './pages/FunnelsView.js';
+import { RetentionView } from './pages/RetentionView.js';
 import { ProjectsView } from './pages/ProjectsView.js';
 import { SettingsView } from './pages/SettingsView.js';
 import { EventsView } from './pages/EventsView.js';
@@ -133,19 +140,28 @@ export const App: React.FC = () => {
         />
 
         <main style={{ flex: 1, padding: 'var(--space-6)', overflowY: 'auto' }}>
-          {activeTab === 'overview' ||
-          activeTab === 'traffic' ||
-          activeTab === 'visitors' ||
-          activeTab === 'sources' ||
-          activeTab === 'geography' ||
-          activeTab === 'devices' ? (
+          {activeTab === 'overview' ? (
             <OverviewView project={selectedProject} />
+          ) : activeTab === 'realtime' ? (
+            <RealtimeView project={selectedProject} />
+          ) : activeTab === 'traffic' || activeTab === 'sources' || activeTab === 'visitors' ? (
+            <TrafficView project={selectedProject} />
+          ) : activeTab === 'audience' || activeTab === 'geography' || activeTab === 'devices' ? (
+            <AudienceView project={selectedProject} />
+          ) : activeTab === 'content' || activeTab === 'pages' ? (
+            <ContentView project={selectedProject} />
           ) : activeTab === 'events' ? (
             <EventsView project={selectedProject} />
-          ) : activeTab === 'errors' ? (
-            <ErrorsView project={selectedProject} />
+          ) : activeTab === 'funnels' ? (
+            <FunnelsView project={selectedProject} />
+          ) : activeTab === 'retention' ? (
+            <RetentionView project={selectedProject} />
           ) : activeTab === 'performance' ? (
             <PerformanceView project={selectedProject} />
+          ) : activeTab === 'errors' ? (
+            <ErrorsView project={selectedProject} />
+          ) : activeTab === 'explore' ? (
+            <ExploreView project={selectedProject} />
           ) : activeTab === 'projects' ? (
             <ProjectsView
               projects={projects}
@@ -160,11 +176,7 @@ export const App: React.FC = () => {
               apiStatus={apiStatus}
             />
           ) : (
-            <EmptyAnalytics
-              title={activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}
-              description={`Detailed metrics and insights for ${activeTab}.`}
-              project={selectedProject}
-            />
+            <OverviewView project={selectedProject} />
           )}
         </main>
       </div>

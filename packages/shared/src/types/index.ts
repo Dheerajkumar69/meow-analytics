@@ -560,3 +560,78 @@ export interface ErrorDetailResponse {
   timeseries: { timestamp: string; count: number }[];
 }
 
+export interface FunnelStep {
+  type: 'page' | 'event';
+  value: string;
+  name?: string;
+}
+
+export interface FunnelStepResult {
+  stepIndex: number;
+  type: 'page' | 'event';
+  value: string;
+  name: string;
+  visitors: number;
+  conversionRate: number;
+  overallConversionRate: number;
+  dropoffCount: number;
+  dropoffRate: number;
+}
+
+export interface FunnelResponse {
+  siteId: string;
+  timeRange: { from: string; to: string };
+  totalStarted: number;
+  totalCompleted: number;
+  overallConversionRate: number;
+  steps: FunnelStepResult[];
+}
+
+export interface RetentionCohortRow {
+  cohortDate: string;
+  cohortSize: number;
+  periods: {
+    period: number;
+    visitors: number;
+    percentage: number;
+  }[];
+}
+
+export interface RetentionResponse {
+  siteId: string;
+  cohortType: 'day' | 'week' | 'month';
+  periodsCount: number;
+  cohorts: RetentionCohortRow[];
+}
+
+export interface RealtimeTimelinePoint {
+  timestamp: string;
+  visitors: number;
+  pageViews: number;
+  events: number;
+}
+
+export interface RealtimeRecentEvent {
+  eventId: string;
+  type: string;
+  eventName: string;
+  path: string;
+  referrerSource: string;
+  countryCode: string;
+  deviceType: string;
+  browser: string;
+  timestamp: string;
+}
+
+export interface EnhancedLiveResponse {
+  siteId: string;
+  liveVisitors: number;
+  liveSessions: number;
+  activePages: { path: string; visitors: number }[];
+  recentEvents: RealtimeRecentEvent[];
+  timeline: RealtimeTimelinePoint[];
+  windowMinutes: number;
+  timestamp: string;
+}
+
+

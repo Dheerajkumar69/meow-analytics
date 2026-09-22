@@ -82,7 +82,7 @@ function toggleOffline(): void {
 // Query Database Records
 async function fetchDbRecords(): Promise<void> {
   try {
-    const adminSecret = 'meow_admin_super_secret_key_12345';
+    const adminSecret = (window as any).__MEOW_ADMIN_SECRET || 'cffc57acd9e24aeea1c5327b271bd4812ceb6733962722fb';
     const res = await fetch('http://localhost:3001/api/v1/projects', {
       headers: { authorization: `Bearer ${adminSecret}` },
     });

@@ -3,6 +3,7 @@ import { runLoadTest } from '../scripts/load-test.js';
 
 describe('Meow Analytics — Phase 9 Load & Scalability Testing', () => {
   it('handles concurrent visitor load, measuring percentiles, throughput, and error rates', async () => {
+    process.env.DATABASE_URL = 'memory://';
     const results = await runLoadTest({
       targetVisitors: 50,
       targetEvents: 500,

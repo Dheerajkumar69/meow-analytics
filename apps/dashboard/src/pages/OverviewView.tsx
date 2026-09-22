@@ -7,6 +7,8 @@ import {
   RefreshCw,
   Layers,
   Percent,
+  Download,
+  Sparkles,
 } from 'lucide-react';
 import {
   Project,
@@ -76,6 +78,8 @@ export const OverviewView: React.FC<OverviewViewProps> = ({ project }) => {
   const [breakdownData, setBreakdownData] = useState<BreakdownItem[]>([]);
   const [breakdownLoading, setBreakdownLoading] = useState(true);
   const [breakdownError, setBreakdownError] = useState<string | null>(null);
+
+  const [exporting, setExporting] = useState(false);
 
   // Sync state to URL
   useEffect(() => {
@@ -297,6 +301,43 @@ export const OverviewView: React.FC<OverviewViewProps> = ({ project }) => {
           />
 
           <button
+            id="export-overview-csv-btn"
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={async () => {
+              if (!project) return;
+              setExporting(true);
+              try {
+                const { from, to } = getDates();
+                const csv = await api.exportData(project.id, {
+                  format: 'csv',
+                  type: 'sessions',
+                  from,
+                  to,
+                  filters: filters.length > 0 ? filters : undefined,
+                });
+                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.setAttribute('href', url);
+                link.setAttribute('download', `meow-overview-sessions-${project.site_id}.csv`);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+              } catch (err: any) {
+                alert(`Export failed: ${err.message || 'Unknown error'}`);
+              } finally {
+                setExporting(false);
+              }
+            }}
+            disabled={exporting || !project}
+            title="Export filtered sessions as CSV"
+          >
+            <Download size={14} />
+            <span>{exporting ? 'Exporting...' : 'Export CSV'}</span>
+          </button>
+
+          <button
             id="refresh-dashboard-btn"
             type="button"
             className="btn btn-secondary btn-icon"
@@ -422,6 +463,46 @@ export const OverviewView: React.FC<OverviewViewProps> = ({ project }) => {
         onRetry={fetchBreakdown}
         onAddFilter={handleAddFilter}
       />
+
+      {/* Intelligent Insights Layer (Phase 5) */}
+      {metrics && metrics.sessions > 0 && (
+        <div className="card" style={{ padding: 'var(--space-4)', backgroundColor: 'var(--color-surface-subtle)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-3)' }}>
+            <Sparkles size={16} style={{ color: 'var(--color-accent)' }} />
+            <h3 style={{ fontSize: '0.9375rem', fontWeight: 600, margin: 0 }}>Automated Observations & Insights</h3>
+            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+              (Derived strictly from current period data)
+            </span>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 'var(--space-3)' }}>
+            {changes?.sessionsChange !== undefined && comparison !== 'none' && (
+              <div style={{ padding: 'var(--space-3)', backgroundColor: 'var(--color-surface-base)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', fontSize: '0.8125rem' }}>
+                <span style={{ fontWeight: 600 }}>Traffic Trend: </span>
+                Sessions {changes.sessionsChange >= 0 ? 'increased' : 'decreased'} by <strong>{Math.abs(changes.sessionsChange)}%</strong> compared to the baseline period.
+              </div>
+            )}
+            {metrics.bounceRate !== undefined && (
+              <div style={{ padding: 'var(--space-3)', backgroundColor: 'var(--color-surface-base)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', fontSize: '0.8125rem' }}>
+                <span style={{ fontWeight: 600 }}>Engagement: </span>
+                Single-page bounce rate is <strong>{metrics.bounceRate.toFixed(1)}%</strong> across {metrics.sessions.toLocaleString()} sessions with avg duration of {formatDuration(metrics.averageSessionDuration)}.
+              </div>
+            )}
+            {metrics.returningVisitorRate !== undefined && (
+              <div style={{ padding: 'var(--space-3)', backgroundColor: 'var(--color-surface-base)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', fontSize: '0.8125rem' }}>
+                <span style={{ fontWeight: 600 }}>Retention: </span>
+                <strong>{metrics.returningVisitorRate.toFixed(1)}%</strong> of visitors this period are returning users ({metrics.returningVisitors.toLocaleString()} returning vs {metrics.newVisitors.toLocaleString()} new).
+              </div>
+            )}
+            {pagesData.length > 0 && (
+              <div style={{ padding: 'var(--space-3)', backgroundColor: 'var(--color-surface-base)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', fontSize: '0.8125rem' }}>
+                <span style={{ fontWeight: 600 }}>Top Content: </span>
+                Route <code>{pagesData[0].path}</code> leads with {pagesData[0].pageViews?.toLocaleString()} views ({Math.round(((pagesData[0].pageViews || 0) / Math.max(metrics.pageViews || 1, 1)) * 100)}% of total volume).
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

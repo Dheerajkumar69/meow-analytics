@@ -4,6 +4,11 @@ import { exportQuerySchema, escapeCsvValue, projectIdParamSchema } from '@meow-a
 import { getDatabase, projects, events, sessions, pageViews } from '@meow-analytics/database';
 import { eq, and, gte, lte, desc, sql } from 'drizzle-orm';
 import { NotFoundError } from '../plugins/error-handler.js';
+import {
+  buildPageViewsFilterSql,
+  buildSessionsFilterSql,
+  buildEventsFilterSql,
+} from '../lib/filters.js';
 
 export const exportRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   // All export requests require authenticated project access
@@ -32,110 +37,90 @@ export const exportRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
     const fromDate = query.from ? new Date(query.from) : undefined;
     const toDate = query.to ? new Date(query.to) : undefined;
     const limit = query.limit || 10000;
+    const filters = query.filters;
+
+    const eventsFilter = buildEventsFilterSql(filters);
+    const sessionsFilter = buildSessionsFilterSql(filters);
+    const pvFilter = buildPageViewsFilterSql(filters);
+
+    const fromEventsSql = fromDate ? sql`AND timestamp >= ${fromDate}` : sql``;
+    const toEventsSql = toDate ? sql`AND timestamp <= ${toDate}` : sql``;
+    const fromSessionsSql = fromDate ? sql`AND started_at >= ${fromDate}` : sql``;
+    const toSessionsSql = toDate ? sql`AND started_at <= ${toDate}` : sql``;
 
     let data: any = {};
 
     // 1. Fetch Events if requested
     if (query.type === 'events' || query.type === 'all') {
-      const conditions: any[] = [eq(events.site_id, siteId)];
-      if (fromDate) conditions.push(gte(events.timestamp, fromDate));
-      if (toDate) conditions.push(lte(events.timestamp, toDate));
+      const eventRows = await db.execute(sql`
+        SELECT
+          event_id as "eventId", site_id as "siteId", type, event_name as "eventName",
+          path, hostname, referrer, referrer_source as "referrerSource",
+          utm_source as "utmSource", utm_medium as "utmMedium", utm_campaign as "utmCampaign",
+          country_code as "countryCode", country_name as "countryName",
+          device_type as "deviceType", browser, os, timestamp
+        FROM events
+        WHERE site_id = ${siteId}
+          ${fromEventsSql}
+          ${toEventsSql}
+          ${eventsFilter}
+        ORDER BY timestamp DESC
+        LIMIT ${limit}
+      `);
 
-      const eventRows = await db
-        .select({
-          eventId: events.event_id,
-          siteId: events.site_id,
-          type: events.type,
-          eventName: events.event_name,
-          path: events.path,
-          hostname: events.hostname,
-          referrer: events.referrer,
-          referrerSource: events.referrer_source,
-          utmSource: events.utm_source,
-          utmMedium: events.utm_medium,
-          utmCampaign: events.utm_campaign,
-          countryCode: events.country_code,
-          countryName: events.country_name,
-          deviceType: events.device_type,
-          browser: events.browser,
-          os: events.os,
-          timestamp: events.timestamp,
-        })
-        .from(events)
-        .where(and(...conditions))
-        .orderBy(desc(events.timestamp))
-        .limit(limit);
-
-      data.events = eventRows.map((r) => ({
+      data.events = (eventRows.rows as any[]).map((r) => ({
         ...r,
-        timestamp: r.timestamp.toISOString(),
+        timestamp: new Date(r.timestamp).toISOString(),
       }));
     }
 
     // 2. Fetch Sessions if requested
     if (query.type === 'sessions' || query.type === 'all') {
-      const conditions: any[] = [eq(sessions.site_id, siteId)];
-      if (fromDate) conditions.push(gte(sessions.started_at, fromDate));
-      if (toDate) conditions.push(lte(sessions.started_at, toDate));
+      const sessionRows = await db.execute(sql`
+        SELECT
+          session_id as "sessionId", site_id as "siteId", started_at as "startedAt",
+          last_seen_at as "lastSeenAt", landing_page as "landingPage", exit_page as "exitPage",
+          page_views as "pageViews", event_count as "eventCount", is_bounce as "isBounce",
+          duration_seconds as "durationSeconds", is_returning as "isReturning",
+          country_code as "countryCode", device_type as "deviceType", browser, os
+        FROM sessions
+        WHERE site_id = ${siteId}
+          ${fromSessionsSql}
+          ${toSessionsSql}
+          ${sessionsFilter}
+        ORDER BY started_at DESC
+        LIMIT ${limit}
+      `);
 
-      const sessionRows = await db
-        .select({
-          sessionId: sessions.session_id,
-          siteId: sessions.site_id,
-          startedAt: sessions.started_at,
-          lastSeenAt: sessions.last_seen_at,
-          landingPage: sessions.landing_page,
-          exitPage: sessions.exit_page,
-          pageViews: sessions.page_views,
-          eventCount: sessions.event_count,
-          isBounce: sessions.is_bounce,
-          durationSeconds: sessions.duration_seconds,
-          isReturning: sessions.is_returning,
-          countryCode: sessions.country_code,
-          deviceType: sessions.device_type,
-          browser: sessions.browser,
-          os: sessions.os,
-        })
-        .from(sessions)
-        .where(and(...conditions))
-        .orderBy(desc(sessions.started_at))
-        .limit(limit);
-
-      data.sessions = sessionRows.map((r) => ({
+      data.sessions = (sessionRows.rows as any[]).map((r) => ({
         ...r,
-        startedAt: r.startedAt.toISOString(),
-        lastSeenAt: r.lastSeenAt.toISOString(),
+        startedAt: new Date(r.startedAt).toISOString(),
+        lastSeenAt: new Date(r.lastSeenAt).toISOString(),
       }));
     }
 
     // 3. Fetch Page Views if requested
     if (query.type === 'page_views' || query.type === 'all') {
-      const conditions: any[] = [eq(pageViews.site_id, siteId)];
-      if (fromDate) conditions.push(gte(pageViews.timestamp, fromDate));
-      if (toDate) conditions.push(lte(pageViews.timestamp, toDate));
+      const pvRows = await db.execute(sql`
+        SELECT
+          id, event_id as "eventId", site_id as "siteId", path, hostname, referrer, timestamp
+        FROM page_views
+        WHERE site_id = ${siteId}
+          ${fromEventsSql}
+          ${toEventsSql}
+          ${pvFilter}
+        ORDER BY timestamp DESC
+        LIMIT ${limit}
+      `);
 
-      const pvRows = await db
-        .select({
-          id: pageViews.id,
-          eventId: pageViews.event_id,
-          siteId: pageViews.site_id,
-          path: pageViews.path,
-          hostname: pageViews.hostname,
-          referrer: pageViews.referrer,
-          timestamp: pageViews.timestamp,
-        })
-        .from(pageViews)
-        .where(and(...conditions))
-        .orderBy(desc(pageViews.timestamp))
-        .limit(limit);
-
-      data.pageViews = pvRows.map((r) => ({
+      data.pageViews = (pvRows.rows as any[]).map((r) => ({
         ...r,
-        timestamp: r.timestamp.toISOString(),
+        timestamp: new Date(r.timestamp).toISOString(),
       }));
     }
 
     const filename = `meow-export-${siteId}-${Date.now()}`;
+
 
     // Format output
     if (query.format === 'csv') {

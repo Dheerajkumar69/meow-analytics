@@ -453,6 +453,7 @@ export const pagesQuerySchema = z
       .trim()
       .min(1, 'siteId cannot be empty')
       .max(64),
+    type: z.enum(['top', 'landing', 'exit', 'hostnames']).default('top').optional(),
     from: z.string().trim().optional(),
     to: z.string().trim().optional(),
     sortBy: z.enum(['visitors', 'page_views', 'sessions']).default('visitors'),
@@ -725,6 +726,69 @@ export type PerformanceMetricPayloadInput = z.infer<typeof performanceMetricPayl
 export type PerformanceIngestRequestInput = z.infer<typeof performanceIngestRequestSchema>;
 export type PerformanceQueryInput = z.infer<typeof performanceQuerySchema>;
 
+export const funnelStepSchema = z
+  .object({
+    type: z.enum(['page', 'pageview', 'event']).default('pageview'),
+    target: z.string().trim().optional(),
+    value: z.string().trim().optional(),
+    name: z.string().trim().optional(),
+  })
+  .transform((s) => ({
+    type: (s.type === 'page' ? 'pageview' : s.type) as 'pageview' | 'event',
+    target: s.target || s.value || '/',
+    value: s.value || s.target || '/',
+    name: s.name || s.target || s.value || 'Step',
+  }));
+
+export const funnelQuerySchema = z
+  .object({
+    siteId: z.string({ required_error: 'siteId query parameter is required' }).trim().min(1).max(64),
+    from: z.string().trim().optional(),
+    to: z.string().trim().optional(),
+    steps: z
+      .union([z.string(), z.array(z.any())])
+      .transform((val, ctx) => {
+        if (!val) return [];
+        if (Array.isArray(val)) {
+          const parsed = z.array(funnelStepSchema).safeParse(val);
+          if (!parsed.success) {
+            ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Invalid funnel step structure' });
+            return z.NEVER;
+          }
+          return parsed.data;
+        }
+        try {
+          const parsedJson = JSON.parse(val);
+          const parsed = z.array(funnelStepSchema).safeParse(parsedJson);
+          if (!parsed.success) {
+            ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Invalid funnel step structure' });
+            return z.NEVER;
+          }
+          return parsed.data;
+        } catch {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Funnel steps must be a valid JSON array' });
+          return z.NEVER;
+        }
+      }),
+    filters: filtersTransform,
+    includeBots: z
+      .union([z.boolean(), z.enum(['true', 'false'])])
+      .transform((val) => val === true || val === 'true')
+      .default(false)
+      .optional(),
+  })
+  .strict();
+
+export const retentionQuerySchema = z
+  .object({
+    siteId: z.string({ required_error: 'siteId query parameter is required' }).trim().min(1).max(64),
+    cohortType: z.enum(['day', 'week', 'month']).default('week'),
+    periods: z.coerce.number().int().min(2).max(12).default(6),
+    from: z.string().trim().optional(),
+    to: z.string().trim().optional(),
+  })
+  .strict();
+
 export const exportQuerySchema = z
   .object({
     siteId: z.string().trim().min(1).max(64).optional(),
@@ -732,6 +796,7 @@ export const exportQuerySchema = z
     type: z.enum(['events', 'sessions', 'page_views', 'all']).default('all'),
     from: z.string().trim().optional(),
     to: z.string().trim().optional(),
+    filters: filtersTransform,
     limit: z.coerce.number().int().positive().max(50000).default(10000),
   })
   .strict();
@@ -767,4 +832,7 @@ export const deleteVisitorSchema = z
 export type ExportQueryInput = z.infer<typeof exportQuerySchema>;
 export type DeleteRangeInput = z.infer<typeof deleteRangeSchema>;
 export type DeleteVisitorInput = z.infer<typeof deleteVisitorSchema>;
+export type FunnelQueryInput = z.infer<typeof funnelQuerySchema>;
+export type RetentionQueryInput = z.infer<typeof retentionQuerySchema>;
+
 

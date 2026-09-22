@@ -15,6 +15,8 @@ import {
   isSensitiveKey,
   performanceQuerySchema,
   classifyMetric,
+  funnelQuerySchema,
+  retentionQuerySchema,
 } from '@meow-analytics/shared';
 import { sql, eq } from 'drizzle-orm';
 import {
@@ -325,6 +327,69 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
       LIMIT 10
     `);
 
+    // Realtime incoming events stream (last 30 recent events)
+    const recentRes = await db.execute(sql`
+      SELECT
+        event_id as "eventId",
+        type,
+        COALESCE(event_name, type) as "eventName",
+        path,
+        referrer_source as "referrerSource",
+        country_code as "countryCode",
+        device_type as "deviceType",
+        browser,
+        timestamp
+      FROM events
+      WHERE site_id = ${siteId}
+        AND is_bot = FALSE
+      ORDER BY timestamp DESC
+      LIMIT 30
+    `);
+
+    // Minute-by-minute activity timeline for the last 30 minutes
+    const timelineFrom = new Date(Date.now() - 30 * 60 * 1000);
+    const timelineRes = await db.execute(sql`
+      SELECT
+        date_trunc('minute', timestamp) as bucket,
+        COUNT(DISTINCT visitor_id) as visitors,
+        COUNT(CASE WHEN type = 'page_view' THEN 1 END) as page_views,
+        COUNT(*) as events
+      FROM events
+      WHERE site_id = ${siteId}
+        AND is_bot = FALSE
+        AND timestamp >= ${timelineFrom}
+      GROUP BY bucket
+      ORDER BY bucket ASC
+    `);
+
+    const timelineMap = new Map<string, { visitors: number; pageViews: number; events: number }>();
+    for (const r of (timelineRes.rows || []) as any[]) {
+      if (r.bucket) {
+        const key = new Date(r.bucket).toISOString();
+        timelineMap.set(key, {
+          visitors: Number(r.visitors || 0),
+          pageViews: Number(r.page_views || 0),
+          events: Number(r.events || 0),
+        });
+      }
+    }
+
+    const timeline: any[] = [];
+    const stepMs = 60 * 1000;
+    const alignedStart = Math.floor(timelineFrom.getTime() / stepMs) * stepMs;
+    const nowMs = Date.now();
+    for (let t = alignedStart; t <= nowMs; t += stepMs) {
+      const iso = new Date(t).toISOString();
+      const val = timelineMap.get(iso) || { visitors: 0, pageViews: 0, events: 0 };
+      timeline.push({
+        timestamp: iso,
+        minute: iso.substring(11, 16),
+        visitors: val.visitors,
+        pageViews: val.pageViews,
+        events: val.events,
+      });
+    }
+
     return reply.send({
       siteId,
       liveVisitors,
@@ -333,6 +398,11 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
         path: r.path,
         visitors: Number(r.visitors || 0),
       })),
+      recentEvents: ((recentRes.rows || []) as any[]).map((r) => ({
+        ...r,
+        timestamp: new Date(r.timestamp).toISOString(),
+      })),
+      timeline,
       windowMinutes,
       timestamp: new Date().toISOString(),
     });
@@ -413,7 +483,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
       const statsRes = await db.execute(sql`
         SELECT
           COUNT(*) AS total_sessions,
-          COALESCE(SUM(page_views), 0) AS total_page_views,
+          COALESCE(SUM(page_views), 0) AS total_session_pvs,
           COALESCE(SUM(CASE WHEN is_bounce THEN 1 ELSE 0 END), 0) AS bounce_sessions,
           COALESCE(SUM(duration_seconds), 0) AS total_duration_seconds
         FROM sessions
@@ -425,9 +495,21 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
       `);
       const row = (statsRes.rows[0] as any) || {};
       const totalSessions = Number(row.total_sessions || 0);
-      const totalPageViews = Number(row.total_page_views || 0);
       const bounceSessions = Number(row.bounce_sessions || 0);
       const totalDuration = Number(row.total_duration_seconds || 0);
+
+      // Compute exact page views from page_views table respecting path/route filters
+      const pvFilter = buildPageViewsFilterSql(filters);
+      const pvRes = await db.execute(sql`
+        SELECT COUNT(*) AS total_page_views
+        FROM page_views
+        WHERE site_id = ${siteId}
+          AND timestamp >= ${fDate}
+          AND timestamp <= ${tDate}
+          ${botFilter}
+          ${pvFilter}
+      `);
+      const totalPageViews = Number((pvRes.rows[0] as any)?.total_page_views || 0);
 
       const bounceRate =
         totalSessions > 0 ? Number(((bounceSessions / totalSessions) * 100).toFixed(2)) : 0;
@@ -645,6 +727,37 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
                 });
               }
             }
+
+            // If the latest aggregate bucket is earlier than the end of the query range (e.g. today has not been rolled up yet)
+            // merge raw unaggregated page_views so today's live traffic is never zeroed out
+            const latestBucket = new Date((aggRes.rows[aggRes.rows.length - 1] as any).bucket).getTime();
+            const nextBucketTime = new Date(latestBucket + 24 * 3600 * 1000);
+            if (nextBucketTime.getTime() <= tDate.getTime()) {
+              const liveRes = await db.execute(sql`
+                SELECT
+                  date_trunc('day', timestamp) AS bucket,
+                  COUNT(DISTINCT visitor_id) AS visitors,
+                  COUNT(DISTINCT session_id) AS sessions,
+                  COUNT(*) AS page_views
+                FROM page_views
+                WHERE site_id = ${siteId}
+                  AND timestamp >= ${nextBucketTime}
+                  AND timestamp <= ${tDate}
+                  AND is_bot = FALSE
+                GROUP BY bucket
+                ORDER BY bucket ASC
+              `);
+              for (const r of (liveRes.rows || []) as any[]) {
+                if (r.bucket) {
+                  const key = new Date(r.bucket).toISOString();
+                  map.set(key, {
+                    visitors: Number(r.visitors || 0),
+                    sessions: Number(r.sessions || 0),
+                    page_views: Number(r.page_views || 0),
+                  });
+                }
+              }
+            }
             return map;
           }
         } else if (truncUnit === 'hour') {
@@ -670,6 +783,35 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
                   sessions: Number(r.sessions || 0),
                   page_views: Number(r.page_views || 0),
                 });
+              }
+            }
+
+            const latestBucket = new Date((aggRes.rows[aggRes.rows.length - 1] as any).bucket).getTime();
+            const nextBucketTime = new Date(latestBucket + 3600 * 1000);
+            if (nextBucketTime.getTime() <= tDate.getTime()) {
+              const liveRes = await db.execute(sql`
+                SELECT
+                  date_trunc('hour', timestamp) AS bucket,
+                  COUNT(DISTINCT visitor_id) AS visitors,
+                  COUNT(DISTINCT session_id) AS sessions,
+                  COUNT(*) AS page_views
+                FROM page_views
+                WHERE site_id = ${siteId}
+                  AND timestamp >= ${nextBucketTime}
+                  AND timestamp <= ${tDate}
+                  AND is_bot = FALSE
+                GROUP BY bucket
+                ORDER BY bucket ASC
+              `);
+              for (const r of (liveRes.rows || []) as any[]) {
+                if (r.bucket) {
+                  const key = new Date(r.bucket).toISOString();
+                  map.set(key, {
+                    visitors: Number(r.visitors || 0),
+                    sessions: Number(r.sessions || 0),
+                    page_views: Number(r.page_views || 0),
+                  });
+                }
               }
             }
             return map;
@@ -872,8 +1014,197 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
       ? new Date(fromQuery)
       : new Date(toDate.getTime() - 30 * 24 * 60 * 60 * 1000);
     const botFilter = includeBots ? sql`` : sql`AND is_bot = FALSE`;
-    const pvFilter = buildPageViewsFilterSql(filters);
+    const contentType = parseResult.data.type || 'top';
+    const sortOrderClause = sortOrder === 'asc' ? sql`ASC` : sql`DESC`;
 
+    if (contentType === 'landing') {
+      const sessionsFilter = buildSessionsFilterSql(filters);
+      const totalRes = await db.execute(sql`
+        SELECT
+          COUNT(DISTINCT visitor_id) AS total_visitors,
+          COALESCE(SUM(page_views), 0) AS total_views,
+          COUNT(DISTINCT landing_page) AS total_pages
+        FROM sessions
+        WHERE site_id = ${siteId}
+          AND started_at >= ${fromDate}
+          AND started_at <= ${toDate}
+          ${botFilter}
+          ${sessionsFilter}
+      `);
+      const totalRow = (totalRes.rows[0] as any) || {};
+      const totalVisitors = Number(totalRow.total_visitors || 0);
+      const totalPageViews = Number(totalRow.total_views || 0);
+      const totalPages = Number(totalRow.total_pages || 0);
+
+      const sortCol =
+        sortBy === 'page_views' ? sql`page_views` : sortBy === 'sessions' ? sql`sessions` : sql`visitors`;
+
+      const rowsRes = await db.execute(sql`
+        SELECT
+          landing_page AS path,
+          COUNT(DISTINCT visitor_id) AS visitors,
+          COUNT(id) AS sessions,
+          COALESCE(SUM(page_views), 0) AS page_views
+        FROM sessions
+        WHERE site_id = ${siteId}
+          AND started_at >= ${fromDate}
+          AND started_at <= ${toDate}
+          ${botFilter}
+          ${sessionsFilter}
+        GROUP BY landing_page
+        ORDER BY ${sortCol} ${sortOrderClause}, page_views DESC
+        LIMIT ${limit} OFFSET ${offset}
+      `);
+
+      const pages = rowsRes.rows.map((r: any) => {
+        const visitors = Number(r.visitors || 0);
+        const percentage = totalVisitors > 0 ? Number(((visitors / totalVisitors) * 100).toFixed(1)) : 0;
+        return {
+          path: r.path,
+          visitors,
+          sessions: Number(r.sessions || 0),
+          pageViews: Number(r.page_views || 0),
+          percentage,
+        };
+      });
+
+      return reply.send({
+        siteId,
+        type: 'landing',
+        timeRange: { from: fromDate.toISOString(), to: toDate.toISOString() },
+        totalVisitors,
+        totalPageViews,
+        totalPages,
+        pages,
+      });
+    }
+
+    if (contentType === 'exit') {
+      const sessionsFilter = buildSessionsFilterSql(filters);
+      const totalRes = await db.execute(sql`
+        SELECT
+          COUNT(DISTINCT visitor_id) AS total_visitors,
+          COALESCE(SUM(page_views), 0) AS total_views,
+          COUNT(DISTINCT exit_page) AS total_pages
+        FROM sessions
+        WHERE site_id = ${siteId}
+          AND last_seen_at >= ${fromDate}
+          AND last_seen_at <= ${toDate}
+          ${botFilter}
+          ${sessionsFilter}
+      `);
+      const totalRow = (totalRes.rows[0] as any) || {};
+      const totalVisitors = Number(totalRow.total_visitors || 0);
+      const totalPageViews = Number(totalRow.total_views || 0);
+      const totalPages = Number(totalRow.total_pages || 0);
+
+      const sortCol =
+        sortBy === 'page_views' ? sql`page_views` : sortBy === 'sessions' ? sql`sessions` : sql`visitors`;
+
+      const rowsRes = await db.execute(sql`
+        SELECT
+          exit_page AS path,
+          COUNT(DISTINCT visitor_id) AS visitors,
+          COUNT(id) AS sessions,
+          COALESCE(SUM(page_views), 0) AS page_views
+        FROM sessions
+        WHERE site_id = ${siteId}
+          AND last_seen_at >= ${fromDate}
+          AND last_seen_at <= ${toDate}
+          ${botFilter}
+          ${sessionsFilter}
+        GROUP BY exit_page
+        ORDER BY ${sortCol} ${sortOrderClause}, page_views DESC
+        LIMIT ${limit} OFFSET ${offset}
+      `);
+
+      const pages = rowsRes.rows.map((r: any) => {
+        const visitors = Number(r.visitors || 0);
+        const percentage = totalVisitors > 0 ? Number(((visitors / totalVisitors) * 100).toFixed(1)) : 0;
+        return {
+          path: r.path,
+          visitors,
+          sessions: Number(r.sessions || 0),
+          pageViews: Number(r.page_views || 0),
+          percentage,
+        };
+      });
+
+      return reply.send({
+        siteId,
+        type: 'exit',
+        timeRange: { from: fromDate.toISOString(), to: toDate.toISOString() },
+        totalVisitors,
+        totalPageViews,
+        totalPages,
+        pages,
+      });
+    }
+
+    if (contentType === 'hostnames') {
+      const pvFilter = buildPageViewsFilterSql(filters);
+      const totalRes = await db.execute(sql`
+        SELECT
+          COUNT(DISTINCT visitor_id) AS total_visitors,
+          COUNT(*) AS total_views,
+          COUNT(DISTINCT hostname) AS total_pages
+        FROM page_views
+        WHERE site_id = ${siteId}
+          AND timestamp >= ${fromDate}
+          AND timestamp <= ${toDate}
+          ${botFilter}
+          ${pvFilter}
+      `);
+      const totalRow = (totalRes.rows[0] as any) || {};
+      const totalVisitors = Number(totalRow.total_visitors || 0);
+      const totalPageViews = Number(totalRow.total_views || 0);
+      const totalPages = Number(totalRow.total_pages || 0);
+
+      const sortCol =
+        sortBy === 'page_views' ? sql`page_views` : sortBy === 'sessions' ? sql`sessions` : sql`visitors`;
+
+      const rowsRes = await db.execute(sql`
+        SELECT
+          hostname AS path,
+          COUNT(DISTINCT visitor_id) AS visitors,
+          COUNT(DISTINCT session_id) AS sessions,
+          COUNT(*) AS page_views
+        FROM page_views
+        WHERE site_id = ${siteId}
+          AND timestamp >= ${fromDate}
+          AND timestamp <= ${toDate}
+          ${botFilter}
+          ${pvFilter}
+        GROUP BY hostname
+        ORDER BY ${sortCol} ${sortOrderClause}, page_views DESC
+        LIMIT ${limit} OFFSET ${offset}
+      `);
+
+      const pages = rowsRes.rows.map((r: any) => {
+        const visitors = Number(r.visitors || 0);
+        const percentage = totalVisitors > 0 ? Number(((visitors / totalVisitors) * 100).toFixed(1)) : 0;
+        return {
+          path: r.path,
+          visitors,
+          sessions: Number(r.sessions || 0),
+          pageViews: Number(r.page_views || 0),
+          percentage,
+        };
+      });
+
+      return reply.send({
+        siteId,
+        type: 'hostnames',
+        timeRange: { from: fromDate.toISOString(), to: toDate.toISOString() },
+        totalVisitors,
+        totalPageViews,
+        totalPages,
+        pages,
+      });
+    }
+
+    // Default: 'top' pages
+    const pvFilter = buildPageViewsFilterSql(filters);
     const totalRes = await db.execute(sql`
       SELECT
         COUNT(DISTINCT visitor_id) AS total_visitors,
@@ -927,6 +1258,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
 
     return reply.send({
       siteId,
+      type: 'top',
       timeRange: { from: fromDate.toISOString(), to: toDate.toISOString() },
       totalVisitors,
       totalPageViews,
@@ -1674,6 +2006,282 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
   fastify.get('/analytics/sources/drilldown', handleSourcesDrilldown);
   fastify.get('/api/v1/analytics/sources/drilldown', handleSourcesDrilldown);
 
+  // Advanced Analytics: Funnels & Cohort Retention Handlers
+  const handleFunnels = async (request: any, reply: any) => {
+    const rawInput = {
+      ...(typeof request.query === 'object' ? request.query : {}),
+      ...(typeof request.body === 'object' ? request.body : {}),
+    };
+    if (request.params?.projectId && !rawInput.siteId) {
+      rawInput.siteId = request.params.projectId;
+    }
+
+    const parseResult = funnelQuerySchema.safeParse(rawInput);
+    if (!parseResult.success) {
+      return reply.status(400).send({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: parseResult.error.issues.map((i) => i.message).join('; '),
+        },
+      });
+    }
+
+    const { siteId: inputSiteId, from: fromQuery, to: toQuery, steps, filters, includeBots } = parseResult.data;
+    const siteId = await resolveSiteId(inputSiteId);
+    if (!siteId) {
+      return reply.status(404).send({
+        error: { code: 'NOT_FOUND', message: `Site or project "${inputSiteId}" not found` },
+      });
+    }
+
+    const toDate = toQuery ? new Date(toQuery) : new Date();
+    const fromDate = fromQuery ? new Date(fromQuery) : new Date(toDate.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const botFilter = includeBots ? sql`` : sql`AND is_bot = FALSE`;
+    const eventsFilter = buildEventsFilterSql(filters);
+
+    if (!steps || steps.length === 0) {
+      return reply.send({
+        siteId,
+        timeRange: { from: fromDate.toISOString(), to: toDate.toISOString() },
+        totalStarted: 0,
+        totalCompleted: 0,
+        overallConversionRate: 0,
+        steps: [],
+      });
+    }
+
+    const stepConditions: any[] = [];
+    for (const step of steps) {
+      if (step.type === 'pageview') {
+        stepConditions.push(sql`(type = 'page_view' AND path = ${step.value})`);
+      } else {
+        stepConditions.push(sql`(event_name = ${step.value} OR type = ${step.value})`);
+      }
+    }
+
+    let combinedStepCond = stepConditions[0]!;
+    for (let i = 1; i < stepConditions.length; i++) {
+      combinedStepCond = sql`${combinedStepCond} OR ${stepConditions[i]!}`;
+    }
+
+    const matchedEventsRes = await db.execute(sql`
+      SELECT visitor_id, type, event_name, path, timestamp
+      FROM events
+      WHERE site_id = ${siteId}
+        AND timestamp >= ${fromDate}
+        AND timestamp <= ${toDate}
+        AND visitor_id IS NOT NULL
+        ${botFilter}
+        ${eventsFilter}
+        AND (${combinedStepCond})
+      ORDER BY timestamp ASC
+    `);
+
+    const visitorEventsMap = new Map<string, Array<{ type: string; eventName: string; path: string; ts: number }>>();
+    for (const r of (matchedEventsRes.rows || []) as any[]) {
+      if (!r.visitor_id) continue;
+      const list = visitorEventsMap.get(r.visitor_id) || [];
+      list.push({
+        type: r.type,
+        eventName: r.event_name,
+        path: r.path,
+        ts: new Date(r.timestamp).getTime(),
+      });
+      visitorEventsMap.set(r.visitor_id, list);
+    }
+
+    const stepCounts = new Array(steps.length).fill(0);
+
+    for (const [, evList] of visitorEventsMap.entries()) {
+      let currentStepIdx = 0;
+      let lastStepTs = 0;
+
+      for (const ev of evList) {
+        if (currentStepIdx >= steps.length) break;
+        const targetStep = steps[currentStepIdx]!;
+        const matches =
+          targetStep.type === 'pageview'
+            ? ev.type === 'page_view' && ev.path === targetStep.value
+            : ev.eventName === targetStep.value || ev.type === targetStep.value;
+
+        if (matches && ev.ts >= lastStepTs) {
+          stepCounts[currentStepIdx]++;
+          currentStepIdx++;
+          lastStepTs = ev.ts;
+        }
+      }
+    }
+
+    const totalStarted = stepCounts[0] || 0;
+    const totalCompleted = stepCounts[steps.length - 1] || 0;
+    const overallConversionRate = totalStarted > 0 ? Number(((totalCompleted / totalStarted) * 100).toFixed(2)) : 0;
+
+    const stepResults = steps.map((step, idx) => {
+      const visitors = stepCounts[idx] || 0;
+      const prevCount = idx === 0 ? visitors : (stepCounts[idx - 1] || 0);
+      const conversionRate = prevCount > 0 ? Number(((visitors / prevCount) * 100).toFixed(2)) : 0;
+      const stepOverallConversionRate = totalStarted > 0 ? Number(((visitors / totalStarted) * 100).toFixed(2)) : 0;
+      const dropoffCount = idx === 0 ? 0 : Math.max(0, prevCount - visitors);
+      const dropoffRate = prevCount > 0 ? Number(((dropoffCount / prevCount) * 100).toFixed(2)) : 0;
+
+      return {
+        stepIndex: idx + 1,
+        type: step.type,
+        value: step.value,
+        target: step.target || step.value,
+        name: step.name || (step.type === 'pageview' ? step.value : `${step.value} (Event)`),
+        visitors,
+        conversionRate: idx === 0 ? 100 : conversionRate,
+        overallConversionRate: stepOverallConversionRate,
+        dropoffCount,
+        dropoffRate,
+        dropOffCount: dropoffCount,
+        dropOffRate: dropoffRate,
+      };
+    });
+
+    return reply.send({
+      siteId,
+      timeRange: { from: fromDate.toISOString(), to: toDate.toISOString() },
+      totalStarted,
+      totalCompleted,
+      overallConversionRate,
+      steps: stepResults,
+    });
+  };
+
+  const handleRetention = async (request: any, reply: any) => {
+    const rawInput = {
+      ...(typeof request.query === 'object' ? request.query : {}),
+    };
+    if (request.params?.projectId && !rawInput.siteId) {
+      rawInput.siteId = request.params.projectId;
+    }
+
+    const parseResult = retentionQuerySchema.safeParse(rawInput);
+    if (!parseResult.success) {
+      return reply.status(400).send({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: parseResult.error.issues.map((i) => i.message).join('; '),
+        },
+      });
+    }
+
+    const { siteId: inputSiteId, cohortType, periods } = parseResult.data;
+    const siteId = await resolveSiteId(inputSiteId);
+    if (!siteId) {
+      return reply.status(404).send({
+        error: { code: 'NOT_FOUND', message: `Site or project "${inputSiteId}" not found` },
+      });
+    }
+
+    const periodMs =
+      cohortType === 'day' ? 24 * 3600 * 1000 : cohortType === 'month' ? 30 * 24 * 3600 * 1000 : 7 * 24 * 3600 * 1000;
+    const periodsCount = periods || 6;
+    const now = Date.now();
+
+    const cohorts: any[] = [];
+
+    for (let c = periodsCount - 1; c >= 0; c--) {
+      const cStart = new Date(now - (c + 1) * periodMs);
+      const cEnd = new Date(now - c * periodMs);
+      const cohortDate = cStart.toISOString().split('T')[0]!;
+
+      const visRes = await db.execute(sql`
+        SELECT id
+        FROM visitors
+        WHERE site_id = ${siteId}
+          AND first_seen_at >= ${cStart}
+          AND first_seen_at < ${cEnd}
+      `);
+
+      const visIds = ((visRes.rows || []) as any[]).map((r) => r.id);
+      const cohortSize = visIds.length;
+
+      if (cohortSize === 0) {
+        cohorts.push({
+          cohortDate,
+          cohortSize: 0,
+          periods: Array.from({ length: c + 1 }).map((_, p) => ({
+            period: p,
+            visitors: 0,
+            percentage: p === 0 ? 100 : 0,
+          })),
+        });
+        continue;
+      }
+
+      const periodResults: any[] = [];
+      for (let p = 0; p <= c; p++) {
+        if (p === 0) {
+          periodResults.push({
+            period: 0,
+            visitors: cohortSize,
+            percentage: 100,
+          });
+          continue;
+        }
+
+        const pStart = new Date(cStart.getTime() + p * periodMs);
+        const pEnd = new Date(cEnd.getTime() + p * periodMs);
+
+        const retRes = await db.execute(sql`
+          SELECT COUNT(DISTINCT visitor_id) AS returning_count
+          FROM sessions
+          WHERE site_id = ${siteId}
+            AND started_at >= ${pStart}
+            AND started_at < ${pEnd}
+            AND is_bot = FALSE
+            AND visitor_id IN (
+              SELECT id FROM visitors
+              WHERE site_id = ${siteId}
+                AND first_seen_at >= ${cStart}
+                AND first_seen_at < ${cEnd}
+            )
+        `);
+
+        const returning = Number((retRes.rows[0] as any)?.returning_count || 0);
+        const percentage = Number(((returning / cohortSize) * 100).toFixed(1));
+
+        periodResults.push({
+          period: p,
+          visitors: returning,
+          percentage,
+        });
+      }
+
+      cohorts.push({
+        cohortDate,
+        cohortSize,
+        periods: periodResults,
+        retention: periodResults.map((pr) => ({
+          periodIndex: pr.period,
+          returningCount: pr.visitors,
+          percentage: pr.percentage,
+        })),
+      });
+    }
+
+    return reply.send({
+      siteId,
+      cohortType,
+      periodsCount,
+      cohorts,
+    });
+  };
+
+  fastify.get('/analytics/funnels', handleFunnels);
+  fastify.get('/api/v1/analytics/funnels', handleFunnels);
+  fastify.get('/api/v1/projects/:projectId/analytics/funnels', handleFunnels);
+  fastify.post('/analytics/funnels', handleFunnels);
+  fastify.post('/api/v1/analytics/funnels', handleFunnels);
+  fastify.post('/api/v1/projects/:projectId/analytics/funnels', handleFunnels);
+
+  fastify.get('/analytics/retention', handleRetention);
+  fastify.get('/api/v1/analytics/retention', handleRetention);
+  fastify.get('/api/v1/projects/:projectId/analytics/retention', handleRetention);
+
   fastify.get('/analytics/utm', handleUtm);
   fastify.get('/api/v1/analytics/utm', handleUtm);
 
@@ -1690,6 +2298,9 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
 
   fastify.get('/analytics/os', handleOs);
   fastify.get('/api/v1/analytics/os', handleOs);
+
+  fastify.get('/analytics/languages', handleLanguages);
+  fastify.get('/api/v1/analytics/languages', handleLanguages);
 
   // --- Phase 6 Custom Events & Errors Handlers ---
 
@@ -2341,26 +2952,31 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
         PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY lcp) as lcp_p75,
         PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY lcp) as lcp_p90,
         PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY lcp) as lcp_p95,
+        PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY lcp) as lcp_p99,
         COUNT(inp)::int as count_inp,
         PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY inp) as inp_p50,
         PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY inp) as inp_p75,
         PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY inp) as inp_p90,
         PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY inp) as inp_p95,
+        PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY inp) as inp_p99,
         COUNT(cls)::int as count_cls,
         PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY cls) as cls_p50,
         PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY cls) as cls_p75,
         PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY cls) as cls_p90,
         PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY cls) as cls_p95,
+        PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY cls) as cls_p99,
         COUNT(fcp)::int as count_fcp,
         PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY fcp) as fcp_p50,
         PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY fcp) as fcp_p75,
         PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY fcp) as fcp_p90,
         PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY fcp) as fcp_p95,
+        PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY fcp) as fcp_p99,
         COUNT(ttfb)::int as count_ttfb,
         PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY ttfb) as ttfb_p50,
         PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY ttfb) as ttfb_p75,
         PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY ttfb) as ttfb_p90,
         PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY ttfb) as ttfb_p95,
+        PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY ttfb) as ttfb_p99,
         AVG(sample_rate) as avg_sample_rate,
         PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY dns_duration) as dns_p75,
         AVG(dns_duration) as dns_avg,
@@ -2500,6 +3116,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
           p75: lcpP75,
           p90: roundMetric(cur.lcp_p90),
           p95: roundMetric(cur.lcp_p95),
+          p99: roundMetric(cur.lcp_p99),
           rating: classifyMetric('lcp', lcpP75),
           count: Number(cur.count_lcp || 0),
           trend: lcpP75 !== null && prevLcpP75 !== null ? calculateSafePercentageChange(lcpP75, prevLcpP75) : null,
@@ -2509,6 +3126,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
           p75: inpP75,
           p90: roundMetric(cur.inp_p90),
           p95: roundMetric(cur.inp_p95),
+          p99: roundMetric(cur.inp_p99),
           rating: classifyMetric('inp', inpP75),
           count: Number(cur.count_inp || 0),
           trend: inpP75 !== null && prevInpP75 !== null ? calculateSafePercentageChange(inpP75, prevInpP75) : null,
@@ -2518,6 +3136,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
           p75: clsP75,
           p90: roundMetric(cur.cls_p90, 4),
           p95: roundMetric(cur.cls_p95, 4),
+          p99: roundMetric(cur.cls_p99, 4),
           rating: classifyMetric('cls', clsP75),
           count: Number(cur.count_cls || 0),
           trend: clsP75 !== null && prevClsP75 !== null ? calculateSafePercentageChange(clsP75, prevClsP75) : null,
@@ -2527,6 +3146,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
           p75: fcpP75,
           p90: roundMetric(cur.fcp_p90),
           p95: roundMetric(cur.fcp_p95),
+          p99: roundMetric(cur.fcp_p99),
           rating: classifyMetric('fcp', fcpP75),
           count: Number(cur.count_fcp || 0),
           trend: fcpP75 !== null && prevFcpP75 !== null ? calculateSafePercentageChange(fcpP75, prevFcpP75) : null,
@@ -2536,11 +3156,13 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
           p75: ttfbP75,
           p90: roundMetric(cur.ttfb_p90),
           p95: roundMetric(cur.ttfb_p95),
+          p99: roundMetric(cur.ttfb_p99),
           rating: classifyMetric('ttfb', ttfbP75),
           count: Number(cur.count_ttfb || 0),
           trend: ttfbP75 !== null && prevTtfbP75 !== null ? calculateSafePercentageChange(ttfbP75, prevTtfbP75) : null,
         },
       },
+
       previousSummary: prevRange
         ? {
             lcp: { p75: prevLcpP75 },

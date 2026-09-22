@@ -110,13 +110,71 @@ export interface SessionsAnalyticsResponse {
   recentSessions: SessionRecord[];
 }
 
+export interface RealtimeTimelinePoint {
+  minute: string;
+  visitors: number;
+  pageViews: number;
+  events: number;
+}
+
+export interface RealtimeRecentEvent {
+  id: string;
+  type: 'pageview' | 'event';
+  name: string;
+  path: string;
+  country: string | null;
+  device: string | null;
+  timestamp: string;
+}
+
 export interface LiveAnalyticsResponse {
   siteId: string;
   liveVisitors: number;
   liveSessions: number;
   activePages: { path: string; visitors: number }[];
+  timeline?: RealtimeTimelinePoint[];
+  recentEvents?: RealtimeRecentEvent[];
   windowMinutes: number;
   timestamp: string;
+}
+
+export interface FunnelStep {
+  name: string;
+  type: 'pageview' | 'event';
+  target: string;
+}
+
+export interface FunnelStepResult {
+  stepIndex: number;
+  name: string;
+  type: 'pageview' | 'event';
+  target: string;
+  visitors: number;
+  conversionRate: number;
+  dropOffCount: number;
+  dropOffRate: number;
+}
+
+export interface FunnelResponse {
+  siteId: string;
+  timeRange: { from: string; to: string };
+  overallConversionRate: number;
+  totalStarted: number;
+  totalCompleted: number;
+  steps: FunnelStepResult[];
+}
+
+export interface RetentionCohortRow {
+  cohortDate: string;
+  cohortSize: number;
+  retention: { periodIndex: number; returningCount: number; percentage: number }[];
+}
+
+export interface RetentionResponse {
+  siteId: string;
+  cohortType: 'day' | 'week' | 'month';
+  timeRange: { from: string; to: string };
+  cohorts: RetentionCohortRow[];
 }
 
 export type FilterField =
@@ -369,9 +427,12 @@ class ApiClient {
 
   constructor() {
     // Load from localStorage or env
-    const saved = localStorage.getItem('meow_admin_secret');
+    const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('meow_admin_secret') : null;
+    const envSecret = import.meta.env.VITE_ADMIN_SECRET;
     if (saved) {
       this.secret = saved;
+    } else if (envSecret) {
+      this.secret = envSecret;
     } else {
       // Default fallback for dev ease
       this.secret = 'meow_admin_super_secret_key_12345';
@@ -463,19 +524,27 @@ class ApiClient {
 
   async exportData(
     id: string,
-    query: { format?: 'json' | 'csv'; type?: string; from?: string; to?: string }
+    query: { format?: 'json' | 'csv'; type?: string; from?: string; to?: string; filters?: FilterClause[] }
   ): Promise<any> {
     const params = new URLSearchParams();
     if (query.format) params.set('format', query.format);
     if (query.type) params.set('type', query.type);
     if (query.from) params.set('from', query.from);
     if (query.to) params.set('to', query.to);
+    if (query.filters && query.filters.length > 0) params.set('filters', JSON.stringify(query.filters));
 
     const path = `/api/v1/projects/${id}/export?${params.toString()}`;
+    const baseUrl = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+    const url = path.startsWith('http') ? path : `${baseUrl}${path}`;
+
     if (query.format === 'csv') {
-      const headers: Record<string, string> = {};
+      const headers: Record<string, string> = { Accept: 'text/csv' };
       if (this.secret) headers['Authorization'] = `Bearer ${this.secret}`;
-      const res = await fetch(path, { headers });
+      const res = await fetch(url, { headers });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null);
+        throw new Error(errJson?.error?.message || `HTTP ${res.status}: ${res.statusText}`);
+      }
       return res.text();
     }
     return this.request<any>(path);
@@ -605,6 +674,7 @@ class ApiClient {
   async getPages(siteId: string, params?: {
     from?: string;
     to?: string;
+    type?: 'top' | 'landing' | 'exit' | 'hostnames';
     sortBy?: 'visitors' | 'page_views' | 'sessions';
     sortOrder?: 'asc' | 'desc';
     limit?: number;
@@ -616,6 +686,7 @@ class ApiClient {
       siteId,
       ...(params?.from ? { from: params.from } : {}),
       ...(params?.to ? { to: params.to } : {}),
+      ...(params?.type ? { type: params.type } : {}),
       ...(params?.sortBy ? { sortBy: params.sortBy } : {}),
       ...(params?.sortOrder ? { sortOrder: params.sortOrder } : {}),
       ...(params?.limit !== undefined ? { limit: String(params.limit) } : {}),
@@ -883,6 +954,42 @@ class ApiClient {
       ...(params?.comparePeriod !== undefined ? { comparePeriod: String(params.comparePeriod) } : {}),
     });
     return this.request<PerformanceAnalyticsResponse>(`/analytics/performance?${qs.toString()}`);
+  }
+
+  async getFunnels(
+    siteId: string,
+    steps: FunnelStep[],
+    params?: {
+      from?: string;
+      to?: string;
+      filters?: FilterClause[];
+    }
+  ): Promise<FunnelResponse> {
+    const qs = new URLSearchParams({
+      siteId,
+      steps: JSON.stringify(steps),
+      ...(params?.from ? { from: params.from } : {}),
+      ...(params?.to ? { to: params.to } : {}),
+      ...(params?.filters && params.filters.length > 0 ? { filters: JSON.stringify(params.filters) } : {}),
+    });
+    return this.request<FunnelResponse>(`/analytics/funnels?${qs.toString()}`);
+  }
+
+  async getRetention(
+    siteId: string,
+    params?: {
+      cohortType?: 'day' | 'week' | 'month';
+      from?: string;
+      to?: string;
+    }
+  ): Promise<RetentionResponse> {
+    const qs = new URLSearchParams({
+      siteId,
+      ...(params?.cohortType ? { cohortType: params.cohortType } : {}),
+      ...(params?.from ? { from: params.from } : {}),
+      ...(params?.to ? { to: params.to } : {}),
+    });
+    return this.request<RetentionResponse>(`/analytics/retention?${qs.toString()}`);
   }
 }
 

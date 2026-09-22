@@ -5,7 +5,14 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    testTimeout: 15000,
+    testTimeout: 20000,
+    hookTimeout: 30000,
+    maxConcurrency: 4,
+    poolOptions: {
+      forks: {
+        maxForks: 4,
+      },
+    },
     include: ['tests/**/*.test.ts', 'packages/**/*.test.ts', 'apps/**/*.test.ts'],
   },
   resolve: {
