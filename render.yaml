@@ -44,7 +44,7 @@ services:
   - type: web
     name: meow-analytics-dashboard
     runtime: static
-    buildCommand: npm install && npm run build -w @meow-analytics/dashboard
+    buildCommand: npm install && npm run build -w @meow-analytics/shared && npm run build -w @meow-analytics/dashboard
     staticPublishPath: ./apps/dashboard/dist
     routes:
       - type: rewrite

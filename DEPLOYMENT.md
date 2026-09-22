@@ -116,7 +116,7 @@ curl https://meow-analytics-api.onrender.com/api/ready
 1. In Render Dashboard, click **New +** -> **Static Site**.
 2. Select the repository:
    - **Name**: `meow-analytics-dashboard`
-   - **Build Command**: `npm install && npm run build -w @meow-analytics/dashboard`
+   - **Build Command**: `npm install && npm run build -w @meow-analytics/shared && npm run build -w @meow-analytics/dashboard`
    - **Publish Directory**: `apps/dashboard/dist`
 3. Under **Environment Variables**:
    - `VITE_API_URL`: `https://meow-analytics-api.onrender.com` (your API service URL)
