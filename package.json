@@ -19,9 +19,13 @@
     "test:watch": "vitest",
     "test:load": "tsx scripts/load-test.ts",
     "db:explain": "tsx scripts/explain-queries.ts",
+    "start": "npm run start -w @meow-analytics/api",
     "db:generate": "npm run db:generate -w @meow-analytics/database",
     "db:migrate": "npm run db:migrate -w @meow-analytics/database",
     "db:seed": "npm run db:seed -w @meow-analytics/database"
+  },
+  "engines": {
+    "node": ">=20.0.0 <=22.x"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",

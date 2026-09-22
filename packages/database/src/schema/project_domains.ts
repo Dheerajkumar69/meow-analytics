@@ -1,5 +1,5 @@
 import { pgTable, varchar, boolean, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
-import { projects } from './projects';
+import { projects } from './projects.js';
 
 export const projectDomains = pgTable(
   'project_domains',
