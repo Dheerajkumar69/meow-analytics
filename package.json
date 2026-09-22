@@ -1,0 +1,30 @@
+{
+  "name": "meow-analytics",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Meow Analytics — Self-Hosted, Privacy-Conscious Web Analytics",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n \"api,dashboard\" -c \"cyan,magenta\" \"npm run dev -w @meow-analytics/api\" \"npm run dev -w @meow-analytics/dashboard\"",
+    "build": "npm run build -w @meow-analytics/shared && npm run build -w @meow-analytics/config && npm run build -w @meow-analytics/database && npm run build -w @meow-analytics/sdk && npm run build -w @meow-analytics/api && npm run build -w @meow-analytics/dashboard",
+    "typecheck": "tsc -b",
+    "lint": "tsc -b",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:load": "tsx scripts/load-test.ts",
+    "db:explain": "tsx scripts/explain-queries.ts",
+    "db:generate": "npm run db:generate -w @meow-analytics/database",
+    "db:migrate": "npm run db:migrate -w @meow-analytics/database",
+    "db:seed": "npm run db:seed -w @meow-analytics/database"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "tsx": "^4.7.1",
+    "typescript": "^5.4.2",
+    "vitest": "^1.4.0"
+  }
+}
