@@ -337,11 +337,11 @@ function extractBrowserUtm(): {
  */
 function getBrowserContext() {
   try {
-    const screenWidth = typeof window !== 'undefined' && window.screen ? window.screen.width : undefined;
-    const screenHeight = typeof window !== 'undefined' && window.screen ? window.screen.height : undefined;
-    const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : undefined;
-    const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : undefined;
-    const devicePixelRatio = typeof window !== 'undefined' ? window.devicePixelRatio : undefined;
+    const screenWidth = typeof window !== 'undefined' && window.screen && window.screen.width > 0 ? Math.round(window.screen.width) : undefined;
+    const screenHeight = typeof window !== 'undefined' && window.screen && window.screen.height > 0 ? Math.round(window.screen.height) : undefined;
+    const viewportWidth = typeof window !== 'undefined' && window.innerWidth > 0 ? Math.round(window.innerWidth) : undefined;
+    const viewportHeight = typeof window !== 'undefined' && window.innerHeight > 0 ? Math.round(window.innerHeight) : undefined;
+    const devicePixelRatio = typeof window !== 'undefined' && window.devicePixelRatio > 0 ? Number(window.devicePixelRatio.toFixed(2)) : undefined;
     const language = typeof navigator !== 'undefined' && navigator.language ? navigator.language : undefined;
     let timezone: string | undefined;
     try {
