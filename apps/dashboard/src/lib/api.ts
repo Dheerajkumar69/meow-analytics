@@ -426,16 +426,17 @@ class ApiClient {
   private secret: string = '';
 
   constructor() {
-    // Load from localStorage or env
     const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('meow_admin_secret') : null;
     const envSecret = import.meta.env.VITE_ADMIN_SECRET;
-    if (saved) {
+    const defaultSecret = 'cffc57acd9e24aeea1c5327b271bd4812ceb6733962722fb';
+
+    // Ignore legacy stale placeholder keys
+    if (saved && saved !== 'meow_admin_super_secret_key_12345' && saved.trim() !== '') {
       this.secret = saved;
     } else if (envSecret) {
       this.secret = envSecret;
     } else {
-      // Default fallback matching development environment
-      this.secret = 'cffc57acd9e24aeea1c5327b271bd4812ceb6733962722fb';
+      this.secret = defaultSecret;
     }
   }
 
