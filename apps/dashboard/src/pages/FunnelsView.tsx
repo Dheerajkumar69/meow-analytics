@@ -28,6 +28,7 @@ import { DateRangeSelector } from '../components/DateRangeSelector.js';
 import { FilterBar } from '../components/FilterBar.js';
 import { CardSkeleton, TableSkeleton } from '../components/Skeleton.js';
 import { WidgetError } from '../components/WidgetError.js';
+import { EmptyAnalytics } from '../components/EmptyAnalytics.js';
 
 interface FunnelsViewProps {
   project: Project | null;
@@ -111,6 +112,16 @@ export const FunnelsView: React.FC<FunnelsViewProps> = ({ project }) => {
       prev.map((step, i) => (i === index ? { ...step, [field]: value } : step))
     );
   };
+
+  if (!project) {
+    return (
+      <EmptyAnalytics
+        title="Conversion Funnels"
+        description="Select or create a project to configure multi-step funnels and track conversion drop-offs."
+        project={null}
+      />
+    );
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>

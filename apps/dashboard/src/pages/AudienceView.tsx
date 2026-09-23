@@ -29,6 +29,7 @@ import { DateRangeSelector } from '../components/DateRangeSelector.js';
 import { FilterBar } from '../components/FilterBar.js';
 import { CardSkeleton, TableSkeleton } from '../components/Skeleton.js';
 import { WidgetError } from '../components/WidgetError.js';
+import { EmptyAnalytics } from '../components/EmptyAnalytics.js';
 
 interface AudienceViewProps {
   project: Project | null;
@@ -265,6 +266,16 @@ export const AudienceView: React.FC<AudienceViewProps> = ({ project }) => {
 
   const maxViews = Math.max(...currentItems.map((i) => i.pageViews || 0), 1);
   const totalViews = currentItems.reduce((acc, curr) => acc + (curr.pageViews || 0), 0);
+
+  if (!project) {
+    return (
+      <EmptyAnalytics
+        title="Audience & Geography Analytics"
+        description="Select or create a project to inspect visitor countries, device breakdowns, browsers, and operating systems."
+        project={null}
+      />
+    );
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>

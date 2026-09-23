@@ -31,6 +31,7 @@ import { DateRangeSelector } from '../components/DateRangeSelector.js';
 import { FilterBar } from '../components/FilterBar.js';
 import { TableSkeleton, CardSkeleton } from '../components/Skeleton.js';
 import { WidgetError } from '../components/WidgetError.js';
+import { EmptyAnalytics } from '../components/EmptyAnalytics.js';
 
 interface ContentViewProps {
   project: Project | null;
@@ -168,6 +169,16 @@ export const ContentView: React.FC<ContentViewProps> = ({ project }) => {
   };
 
   const maxViews = Math.max(...pages.map((p) => p.pageViews || 0), 1);
+
+  if (!project) {
+    return (
+      <EmptyAnalytics
+        title="Content & Page Analytics"
+        description="Select or create a project to inspect top viewed routes, landing entry points, and exit paths."
+        project={null}
+      />
+    );
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>

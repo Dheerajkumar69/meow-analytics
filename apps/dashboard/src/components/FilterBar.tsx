@@ -71,11 +71,12 @@ export const FilterBar: React.FC<FilterBarProps> = ({ filters, onFiltersChange }
         border: '1px solid var(--color-border)',
         borderRadius: 'var(--radius-lg)',
         padding: 'var(--space-3) var(--space-4)',
+        boxShadow: 'var(--shadow-xs)',
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)', color: 'var(--color-text-secondary)', fontSize: '0.8125rem', fontWeight: 600 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1-5)', color: 'var(--color-text-secondary)', fontSize: '0.8125rem', fontWeight: 600 }}>
             <Filter size={14} style={{ color: 'var(--color-accent)' }} />
             <span>Filters:</span>
           </div>
@@ -102,13 +103,13 @@ export const FilterBar: React.FC<FilterBarProps> = ({ filters, onFiltersChange }
                   backgroundColor: 'var(--color-surface-subtle)',
                   border: '1px solid var(--color-border)',
                   borderRadius: 'var(--radius-full)',
-                  padding: '0.2rem 0.625rem',
+                  padding: '0.1875rem 0.625rem',
                   fontSize: '0.75rem',
                   animation: 'fadeIn 120ms ease-out',
                 }}
               >
                 <span style={{ color: 'var(--color-text-muted)', fontWeight: 500 }}>{fieldLabel}</span>
-                <span style={{ color: 'var(--color-accent)', fontWeight: 600 }}>{opSymbol}</span>
+                <span style={{ color: 'var(--color-accent)', fontWeight: 700 }}>{opSymbol}</span>
                 <span style={{ color: 'var(--color-text-primary)', fontWeight: 600 }}>"{f.value}"</span>
                 <button
                   type="button"
@@ -123,7 +124,9 @@ export const FilterBar: React.FC<FilterBarProps> = ({ filters, onFiltersChange }
                     alignItems: 'center',
                     padding: '1px',
                     marginLeft: '2px',
+                    borderRadius: 'var(--radius-full)',
                   }}
+                  aria-label={`Remove filter: ${fieldLabel}`}
                 >
                   <X size={12} />
                 </button>
@@ -138,9 +141,9 @@ export const FilterBar: React.FC<FilterBarProps> = ({ filters, onFiltersChange }
               type="button"
               className="btn btn-secondary btn-sm"
               onClick={() => setIsAdding(true)}
-              style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem' }}
+              style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', minHeight: '28px' }}
             >
-              <Plus size={12} />
+              <Plus size={12} style={{ color: 'var(--color-accent)' }} />
               <span>Add Filter</span>
             </button>
           )}
@@ -182,7 +185,8 @@ export const FilterBar: React.FC<FilterBarProps> = ({ filters, onFiltersChange }
             className="select"
             value={selectedField}
             onChange={(e) => setSelectedField(e.target.value as FilterField)}
-            style={{ width: 'auto', minWidth: '130px', fontSize: '0.75rem', padding: '0.3rem 0.5rem' }}
+            style={{ width: 'auto', minWidth: '130px', fontSize: '0.75rem', padding: '0.25rem 0.5rem', minHeight: '30px' }}
+            aria-label="Filter dimension"
           >
             {FILTER_FIELDS.map((f) => (
               <option key={f.key} value={f.key}>
@@ -197,7 +201,8 @@ export const FilterBar: React.FC<FilterBarProps> = ({ filters, onFiltersChange }
             className="select"
             value={selectedOp}
             onChange={(e) => setSelectedOp(e.target.value as FilterOperator)}
-            style={{ width: 'auto', minWidth: '120px', fontSize: '0.75rem', padding: '0.3rem 0.5rem' }}
+            style={{ width: 'auto', minWidth: '120px', fontSize: '0.75rem', padding: '0.25rem 0.5rem', minHeight: '30px' }}
+            aria-label="Filter operator"
           >
             {OPERATORS.map((op) => (
               <option key={op.key} value={op.key}>
@@ -215,7 +220,8 @@ export const FilterBar: React.FC<FilterBarProps> = ({ filters, onFiltersChange }
             onChange={(e) => setFilterValue(e.target.value)}
             placeholder={currentFieldDef?.placeholder || 'Enter value...'}
             autoFocus
-            style={{ flex: '1 1 180px', minWidth: '140px', fontSize: '0.75rem', padding: '0.3rem 0.5rem' }}
+            style={{ flex: '1 1 180px', minWidth: '140px', fontSize: '0.75rem', padding: '0.25rem 0.5rem', minHeight: '30px' }}
+            aria-label="Filter value"
           />
 
           <div style={{ display: 'flex', gap: 'var(--space-1)' }}>
@@ -224,7 +230,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({ filters, onFiltersChange }
               type="submit"
               className="btn btn-primary btn-sm"
               disabled={!filterValue.trim()}
-              style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem' }}
+              style={{ fontSize: '0.75rem', padding: '0.25rem 0.625rem', minHeight: '30px' }}
             >
               Add
             </button>
@@ -235,7 +241,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({ filters, onFiltersChange }
                 setIsAdding(false);
                 setFilterValue('');
               }}
-              style={{ fontSize: '0.75rem', padding: '0.3rem 0.5rem' }}
+              style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem', minHeight: '30px' }}
             >
               Cancel
             </button>

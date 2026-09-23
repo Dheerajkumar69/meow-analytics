@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Sidebar, NavItemKey } from './layout/Sidebar.js';
 import { TopNav } from './layout/TopNav.js';
-import { EmptyAnalytics } from './components/EmptyAnalytics.js';
 import { OverviewView } from './pages/OverviewView.js';
 const TrafficView = React.lazy(() => import('./pages/TrafficView.js').then((m) => ({ default: m.TrafficView })));
 const AudienceView = React.lazy(() => import('./pages/AudienceView.js').then((m) => ({ default: m.AudienceView })));
@@ -17,7 +16,6 @@ const ErrorsView = React.lazy(() => import('./pages/ErrorsView.js').then((m) => 
 const PerformanceView = React.lazy(() => import('./pages/PerformanceView.js').then((m) => ({ default: m.PerformanceView })));
 import { Modal } from './components/Modal.js';
 import { Project, api } from './lib/api.js';
-import { Shield } from 'lucide-react';
 
 export const App: React.FC = () => {
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
@@ -39,6 +37,9 @@ export const App: React.FC = () => {
   // Admin settings modal state
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
   const [adminSecretInput, setAdminSecretInput] = useState(api.getSecret());
+
+  // Mobile drawer state
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   // Apply theme class/attribute to documentElement
   useEffect(() => {
@@ -112,11 +113,8 @@ export const App: React.FC = () => {
     loadProjects();
   };
 
-  // Mobile drawer state
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', width: '100%' }}>
+    <div style={{ display: 'flex', minHeight: '100vh', width: '100%', backgroundColor: 'var(--color-bg)' }}>
       {/* Sidebar Navigation */}
       <Sidebar
         activeTab={activeTab}
@@ -126,7 +124,7 @@ export const App: React.FC = () => {
       />
 
       {/* Main Content Area */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: '100vh' }}>
         <TopNav
           projects={projects}
           selectedProject={selectedProject}
@@ -140,46 +138,48 @@ export const App: React.FC = () => {
         />
 
         <main style={{ flex: 1, padding: 'var(--space-6)', overflowY: 'auto' }}>
-          <React.Suspense fallback={<div className="skeleton-card" style={{ height: 320, margin: 'var(--space-4) 0' }} />}>
-            {activeTab === 'overview' ? (
-              <OverviewView project={selectedProject} />
-            ) : activeTab === 'realtime' ? (
-              <RealtimeView project={selectedProject} />
-            ) : activeTab === 'traffic' || activeTab === 'sources' || activeTab === 'visitors' ? (
-              <TrafficView project={selectedProject} />
-            ) : activeTab === 'audience' || activeTab === 'geography' || activeTab === 'devices' ? (
-              <AudienceView project={selectedProject} />
-            ) : activeTab === 'content' || activeTab === 'pages' ? (
-              <ContentView project={selectedProject} />
-            ) : activeTab === 'events' ? (
-              <EventsView project={selectedProject} />
-            ) : activeTab === 'funnels' ? (
-              <FunnelsView project={selectedProject} />
-            ) : activeTab === 'retention' ? (
-              <RetentionView project={selectedProject} />
-            ) : activeTab === 'performance' ? (
-              <PerformanceView project={selectedProject} />
-            ) : activeTab === 'errors' ? (
-              <ErrorsView project={selectedProject} />
-            ) : activeTab === 'explore' ? (
-              <ExploreView project={selectedProject} />
-            ) : activeTab === 'projects' ? (
-              <ProjectsView
-                projects={projects}
-                selectedProject={selectedProject}
-                onRefreshProjects={loadProjects}
-                onSelectProject={setSelectedProject}
-              />
-            ) : activeTab === 'settings' ? (
-              <SettingsView
-                theme={theme}
-                onToggleTheme={handleToggleTheme}
-                apiStatus={apiStatus}
-              />
-            ) : (
-              <OverviewView project={selectedProject} />
-            )}
-          </React.Suspense>
+          <div style={{ maxWidth: '1440px', margin: '0 auto', width: '100%' }}>
+            <React.Suspense fallback={<div className="skeleton skeleton-card" style={{ height: 320, margin: 'var(--space-4) 0' }} />}>
+              {activeTab === 'overview' ? (
+                <OverviewView project={selectedProject} />
+              ) : activeTab === 'realtime' ? (
+                <RealtimeView project={selectedProject} />
+              ) : activeTab === 'traffic' || activeTab === 'sources' || activeTab === 'visitors' ? (
+                <TrafficView project={selectedProject} />
+              ) : activeTab === 'audience' || activeTab === 'geography' || activeTab === 'devices' ? (
+                <AudienceView project={selectedProject} />
+              ) : activeTab === 'content' || activeTab === 'pages' ? (
+                <ContentView project={selectedProject} />
+              ) : activeTab === 'events' ? (
+                <EventsView project={selectedProject} />
+              ) : activeTab === 'funnels' ? (
+                <FunnelsView project={selectedProject} />
+              ) : activeTab === 'retention' ? (
+                <RetentionView project={selectedProject} />
+              ) : activeTab === 'performance' ? (
+                <PerformanceView project={selectedProject} />
+              ) : activeTab === 'errors' ? (
+                <ErrorsView project={selectedProject} />
+              ) : activeTab === 'explore' ? (
+                <ExploreView project={selectedProject} />
+              ) : activeTab === 'projects' ? (
+                <ProjectsView
+                  projects={projects}
+                  selectedProject={selectedProject}
+                  onRefreshProjects={loadProjects}
+                  onSelectProject={setSelectedProject}
+                />
+              ) : activeTab === 'settings' ? (
+                <SettingsView
+                  theme={theme}
+                  onToggleTheme={handleToggleTheme}
+                  apiStatus={apiStatus}
+                />
+              ) : (
+                <OverviewView project={selectedProject} />
+              )}
+            </React.Suspense>
+          </div>
         </main>
       </div>
 
@@ -187,7 +187,7 @@ export const App: React.FC = () => {
       <Modal
         isOpen={isCreateProjectOpen}
         onClose={() => setIsCreateProjectOpen(false)}
-        title="Create New Project"
+        title="Register New Analytics Project"
         footer={
           <>
             <button
@@ -204,7 +204,7 @@ export const App: React.FC = () => {
               className="btn btn-primary"
               disabled={creatingProject || !projectName.trim()}
             >
-              {creatingProject ? 'Creating...' : 'Create Project'}
+              {creatingProject ? 'Registering...' : 'Register Project'}
             </button>
           </>
         }
@@ -221,6 +221,7 @@ export const App: React.FC = () => {
                 borderRadius: 'var(--radius-md)',
                 backgroundColor: 'var(--color-danger-subtle)',
                 color: 'var(--color-danger-text)',
+                border: '1px solid var(--color-danger-border)',
                 fontSize: '0.8125rem',
               }}
             >
@@ -228,15 +229,15 @@ export const App: React.FC = () => {
             </div>
           )}
 
-          <div>
-            <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, marginBottom: 'var(--space-1)' }}>
+          <div className="form-group">
+            <label className="form-label" htmlFor="new-project-name-input">
               Project Name
             </label>
             <input
               id="new-project-name-input"
               type="text"
               className="input"
-              placeholder="e.g. My Website or Meow Stream"
+              placeholder="e.g. My SaaS or Production App"
               value={projectName}
               onChange={(e) => setProjectName(e.target.value)}
               autoFocus
@@ -244,8 +245,8 @@ export const App: React.FC = () => {
             />
           </div>
 
-          <div>
-            <label style={{ display: 'block', fontSize: '0.8125rem', fontWeight: 600, marginBottom: 'var(--space-1)' }}>
+          <div className="form-group">
+            <label className="form-label" htmlFor="new-project-timezone-input">
               Timezone (IANA)
             </label>
             <input
@@ -257,8 +258,8 @@ export const App: React.FC = () => {
               onChange={(e) => setProjectTimezone(e.target.value)}
               required
             />
-            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: 'var(--space-1)', display: 'block' }}>
-              Used to group daily visitor and event stats.
+            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+              Determines daily midnight cutoffs for aggregate metrics.
             </span>
           </div>
         </form>
@@ -293,17 +294,22 @@ export const App: React.FC = () => {
           onSubmit={handleSaveAdminSecret}
           style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}
         >
-          <p style={{ fontSize: '0.8125rem' }}>
-            Provide the <code>ADMIN_SECRET</code> matching your API server configuration to manage projects, domains, and keys.
+          <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-secondary)' }}>
+            Provide the <code>ADMIN_SECRET</code> matching your API server configuration to manage projects, domain verification, and API tokens.
           </p>
-          <input
-            type="password"
-            className="input"
-            value={adminSecretInput}
-            onChange={(e) => setAdminSecretInput(e.target.value)}
-            placeholder="Enter ADMIN_SECRET"
-            required
-          />
+          <div className="form-group">
+            <label className="form-label">
+              Admin Secret Key
+            </label>
+            <input
+              type="password"
+              className="input"
+              value={adminSecretInput}
+              onChange={(e) => setAdminSecretInput(e.target.value)}
+              placeholder="Enter ADMIN_SECRET"
+              required
+            />
+          </div>
         </form>
       </Modal>
     </div>

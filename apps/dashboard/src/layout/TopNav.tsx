@@ -1,6 +1,6 @@
 import React from 'react';
 import { Project } from '../lib/api.js';
-import { Moon, Sun, ShieldCheck, Plus, Menu } from 'lucide-react';
+import { Moon, Sun, ShieldCheck, Plus, Menu, Database, Globe } from 'lucide-react';
 
 interface TopNavProps {
   projects: Project[];
@@ -28,20 +28,20 @@ export const TopNav: React.FC<TopNavProps> = ({
   return (
     <header
       style={{
-        height: '60px',
+        height: '64px',
         backgroundColor: 'var(--color-surface-base)',
         borderBottom: '1px solid var(--color-border)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '0 var(--space-4)',
+        padding: '0 var(--space-6)',
         position: 'sticky',
         top: 0,
         zIndex: 50,
       }}
     >
-      {/* Left: Mobile Drawer Button + Project Selector */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+      {/* Left: Mobile Drawer Trigger + Project Selector + New Project */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
         {onToggleMobileSidebar && (
           <button
             id="mobile-menu-toggle-btn"
@@ -49,68 +49,84 @@ export const TopNav: React.FC<TopNavProps> = ({
             className="btn btn-ghost btn-icon mobile-menu-btn"
             onClick={onToggleMobileSidebar}
             aria-label="Toggle navigation menu"
-            style={{ display: 'none' }}
           >
             <Menu size={20} />
           </button>
         )}
 
-        <div style={{ position: 'relative' }}>
-          <select
-            id="project-selector"
-            className="select"
-            style={{
-              paddingRight: 'var(--space-6)',
-              fontWeight: 600,
-              cursor: 'pointer',
-              minWidth: '170px',
-              maxWidth: '240px',
-              backgroundColor: 'var(--color-surface-subtle)',
-              fontSize: '0.8125rem',
-            }}
-            value={selectedProject?.id || ''}
-            onChange={(e) => {
-              const found = projects.find((p) => p.id === e.target.value);
-              if (found) onSelectProject(found);
-            }}
-          >
-            {projects.length === 0 && <option value="">No projects available</option>}
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name} ({p.site_id})
-              </option>
-            ))}
-          </select>
-        </div>
+        {/* Project Selector Wrapper */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <Globe
+              size={15}
+              style={{
+                position: 'absolute',
+                left: '10px',
+                color: 'var(--color-text-muted)',
+                pointerEvents: 'none',
+              }}
+            />
+            <select
+              id="project-selector"
+              className="select"
+              style={{
+                paddingLeft: '32px',
+                paddingRight: 'var(--space-6)',
+                fontWeight: 600,
+                cursor: 'pointer',
+                minWidth: '200px',
+                maxWidth: '280px',
+                backgroundColor: 'var(--color-surface-subtle)',
+                fontSize: '0.8125rem',
+                border: '1px solid var(--color-border)',
+                borderRadius: 'var(--radius-md)',
+              }}
+              value={selectedProject?.id || ''}
+              onChange={(e) => {
+                const found = projects.find((p) => p.id === e.target.value);
+                if (found) onSelectProject(found);
+              }}
+              aria-label="Select active project"
+            >
+              {projects.length === 0 && <option value="">No projects registered</option>}
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} ({p.site_id})
+                </option>
+              ))}
+            </select>
+          </div>
 
-        <button
-          id="create-project-btn-nav"
-          type="button"
-          className="btn btn-secondary btn-sm"
-          onClick={onOpenCreateProject}
-          title="Create New Project"
-        >
-          <Plus size={14} />
-          <span className="hide-on-mobile">New Project</span>
-        </button>
+          <button
+            id="create-project-btn-nav"
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={onOpenCreateProject}
+            title="Create New Analytics Project"
+          >
+            <Plus size={14} style={{ color: 'var(--color-accent)' }} />
+            <span className="hide-on-mobile">New Project</span>
+          </button>
+        </div>
       </div>
 
-      {/* Right Controls: Health, Admin Auth, Theme Toggle */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-        {/* API Status Badge */}
+      {/* Right Controls: Health Status, Admin Security, Theme Toggle */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2-5)' }}>
+        {/* API Telemetry Status Badge */}
         <div
           title={
             apiStatus === 'healthy'
-              ? 'API and Database connected'
+              ? 'Telemetry API & Database Connected'
               : apiStatus === 'unhealthy'
-              ? 'Cannot connect to API / Database'
-              : 'Checking API status...'
+              ? 'Cannot reach API server'
+              : 'Verifying API status...'
           }
           style={{
             display: 'flex',
             alignItems: 'center',
             gap: 'var(--space-2)',
             fontSize: '0.75rem',
+            fontWeight: 600,
             padding: '0.25rem 0.625rem',
             borderRadius: 'var(--radius-full)',
             backgroundColor: 'var(--color-surface-subtle)',
@@ -135,23 +151,23 @@ export const TopNav: React.FC<TopNavProps> = ({
             }}
           />
           <span style={{ color: 'var(--color-text-secondary)' }} className="hide-on-mobile">
-            {apiStatus === 'healthy' ? 'API Ready' : apiStatus === 'unhealthy' ? 'API Offline' : 'Connecting'}
+            {apiStatus === 'healthy' ? 'API Online' : apiStatus === 'unhealthy' ? 'API Offline' : 'Connecting'}
           </span>
         </div>
 
-        {/* Admin Secret Config Button */}
+        {/* Admin Secret Configuration Button */}
         <button
           id="admin-auth-config-btn"
           type="button"
           className="btn btn-ghost btn-sm"
           onClick={onOpenAdminSettings}
-          title="Admin Authentication Settings"
+          title="Admin Authentication Credentials"
         >
-          <ShieldCheck size={16} />
+          <ShieldCheck size={16} style={{ color: 'var(--color-text-secondary)' }} />
           <span className="hide-on-mobile">Admin</span>
         </button>
 
-        {/* Theme Toggle */}
+        {/* Theme Mode Toggle */}
         <button
           id="theme-toggle-btn"
           type="button"
@@ -160,7 +176,11 @@ export const TopNav: React.FC<TopNavProps> = ({
           aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
           title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
         >
-          {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+          {theme === 'dark' ? (
+            <Sun size={17} style={{ color: 'var(--color-warning)' }} />
+          ) : (
+            <Moon size={17} style={{ color: 'var(--color-info)' }} />
+          )}
         </button>
       </div>
     </header>

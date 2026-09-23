@@ -35,6 +35,7 @@ import { DateRangeSelector } from '../components/DateRangeSelector.js';
 import { FilterBar } from '../components/FilterBar.js';
 import { TableSkeleton } from '../components/Skeleton.js';
 import { WidgetError } from '../components/WidgetError.js';
+import { EmptyAnalytics } from '../components/EmptyAnalytics.js';
 
 interface ExploreViewProps {
   project: Project | null;
@@ -181,6 +182,16 @@ export const ExploreView: React.FC<ExploreViewProps> = ({ project }) => {
   };
 
   const maxVal = Math.max(...filteredItems.map((i) => getMetricVal(i, primaryMetric) || 0), 1);
+
+  if (!project) {
+    return (
+      <EmptyAnalytics
+        title="Query Explorer & Slice"
+        description="Select or create a project to group by dimensions, analyze distributions, and export raw analytical slices."
+        project={null}
+      />
+    );
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>

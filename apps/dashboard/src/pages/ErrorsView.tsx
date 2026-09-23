@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { Modal } from '../components/Modal.js';
 import { CardSkeleton } from '../components/Skeleton.js';
+import { EmptyAnalytics } from '../components/EmptyAnalytics.js';
 
 interface ErrorsViewProps {
   project: Project | null;
@@ -123,9 +124,11 @@ export const ErrorsView: React.FC<ErrorsViewProps> = ({ project }) => {
 
   if (!project) {
     return (
-      <div style={{ textAlign: 'center', padding: 'var(--space-12)' }}>
-        <p style={{ color: 'var(--color-text-secondary)' }}>Please select or create a project first.</p>
-      </div>
+      <EmptyAnalytics
+        title="JavaScript Error Tracking"
+        description="Select or create a project to inspect client runtime exceptions, error groups, stack traces, and affected visitors."
+        project={null}
+      />
     );
   }
 

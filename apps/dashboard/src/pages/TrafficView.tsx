@@ -35,6 +35,7 @@ import { DateRangeSelector } from '../components/DateRangeSelector.js';
 import { FilterBar } from '../components/FilterBar.js';
 import { CardSkeleton, TableSkeleton } from '../components/Skeleton.js';
 import { WidgetError } from '../components/WidgetError.js';
+import { EmptyAnalytics } from '../components/EmptyAnalytics.js';
 
 interface TrafficViewProps {
   project: Project | null;
@@ -266,6 +267,16 @@ export const TrafficView: React.FC<TrafficViewProps> = ({ project }) => {
 
   const maxAcqViews = Math.max(...activeBreakdownItems.map((i) => i.pageViews || 0), 1);
   const totalAcqViews = activeBreakdownItems.reduce((acc, curr) => acc + (curr.pageViews || 0), 0);
+
+  if (!project) {
+    return (
+      <EmptyAnalytics
+        title="Traffic & Acquisition Analytics"
+        description="Select or create a project to inspect acquisition channels, referrers, and UTM campaigns."
+        project={null}
+      />
+    );
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>

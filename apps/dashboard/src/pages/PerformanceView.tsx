@@ -25,6 +25,7 @@ import {
   ChevronUp,
 } from 'lucide-react';
 import { CardSkeleton } from '../components/Skeleton.js';
+import { EmptyAnalytics } from '../components/EmptyAnalytics.js';
 
 interface PerformanceViewProps {
   project: Project | null;
@@ -330,9 +331,11 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({ project }) => 
 
   if (!project) {
     return (
-      <div style={{ padding: 'var(--space-8)', textAlign: 'center', color: 'var(--color-text-muted)' }}>
-        Please select a project to view performance metrics.
-      </div>
+      <EmptyAnalytics
+        title="Web Performance & Core Web Vitals"
+        description="Select or create a project to inspect real-user LCP, FID/INP, CLS, TTFB, and page responsiveness percentiles."
+        project={null}
+      />
     );
   }
 

@@ -36,6 +36,7 @@ import { TopPagesTable } from '../components/TopPagesTable.js';
 import { AnalyticsExplorer } from '../components/AnalyticsExplorer.js';
 import { CardSkeleton } from '../components/Skeleton.js';
 import { WidgetError } from '../components/WidgetError.js';
+import { EmptyAnalytics } from '../components/EmptyAnalytics.js';
 
 interface OverviewViewProps {
   project: Project | null;
@@ -237,9 +238,11 @@ export const OverviewView: React.FC<OverviewViewProps> = ({ project }) => {
 
   if (!project) {
     return (
-      <div style={{ padding: 'var(--space-12)', textAlign: 'center' }}>
-        <p style={{ color: 'var(--color-text-muted)' }}>Select or create a project to view analytics.</p>
-      </div>
+      <EmptyAnalytics
+        title="No Project Selected"
+        description="Select an existing project from the header dropdown or click 'New Project' to register a site and begin collecting analytics."
+        project={null}
+      />
     );
   }
 

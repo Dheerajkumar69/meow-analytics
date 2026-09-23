@@ -1,6 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { TrendingUp, Users, Layers, Eye, Calendar } from 'lucide-react';
-import { TimeseriesPoint, TimeseriesResponse } from '../lib/api.js';
+import { TimeseriesResponse } from '../lib/api.js';
 import { ChartSkeleton } from './Skeleton.js';
 import { WidgetError } from './WidgetError.js';
 
@@ -53,7 +53,6 @@ export const TrafficChart: React.FC<TrafficChartProps> = ({
     if (p.comparisonValue && p.comparisonValue > maxVal) maxVal = p.comparisonValue;
   }
   if (maxVal <= 0) maxVal = 10;
-  // Round up maxVal for pleasant grid ticks
   const tickStep = Math.ceil(maxVal / 4);
   const effectiveMax = tickStep * 4;
 
@@ -83,12 +82,10 @@ export const TrafficChart: React.FC<TrafficChartProps> = ({
   let comparisonPath = '';
 
   if (series.length > 0) {
-    // Primary line & area
     const points = series.map((p, i) => `${getX(i)},${getY(p.value)}`);
     primaryPath = `M ${points.join(' L ')}`;
     primaryArea = `M ${getX(0)},${padTop + chartH} L ${points.join(' L ')} L ${getX(series.length - 1)},${padTop + chartH} Z`;
 
-    // Comparison line (if any point has comparisonValue)
     const hasComparison = series.some((p) => p.comparisonValue !== undefined && p.comparisonValue !== null);
     if (hasComparison) {
       const compPoints = series.map((p, i) => `${getX(i)},${getY(p.comparisonValue ?? 0)}`);
@@ -96,7 +93,6 @@ export const TrafficChart: React.FC<TrafficChartProps> = ({
     }
   }
 
-  // Mouse move handler for hover tooltip
   const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
     if (!series.length || !containerRef.current) return;
     const rect = e.currentTarget.getBoundingClientRect();
@@ -115,7 +111,7 @@ export const TrafficChart: React.FC<TrafficChartProps> = ({
 
   return (
     <div className="card" style={{ padding: 'var(--space-5)' }} ref={containerRef}>
-      {/* Chart Header: Title, Metric Switcher, Resolution */}
+      {/* Chart Header: Title, Metric Switcher, Resolution, Legend */}
       <div
         style={{
           display: 'flex',
@@ -126,18 +122,18 @@ export const TrafficChart: React.FC<TrafficChartProps> = ({
           marginBottom: 'var(--space-4)',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-            <TrendingUp size={18} color="var(--color-accent)" />
-            <h3 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--color-text-primary)' }}>
+            <TrendingUp size={18} style={{ color: 'var(--color-accent)' }} />
+            <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>
               Traffic Trend
             </h3>
           </div>
 
-          {/* Metric Selector */}
+          {/* Metric Selector Pills */}
           <div
             style={{
-              display: 'flex',
+              display: 'inline-flex',
               backgroundColor: 'var(--color-surface-subtle)',
               border: '1px solid var(--color-border)',
               borderRadius: 'var(--radius-md)',
@@ -168,10 +164,10 @@ export const TrafficChart: React.FC<TrafficChartProps> = ({
                     color: isSelected ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
                     border: 'none',
                     cursor: 'pointer',
-                    transition: 'var(--transition-fast)',
+                    transition: 'all var(--transition-fast)',
                   }}
                 >
-                  <Icon size={12} />
+                  <Icon size={12} style={{ color: isSelected ? 'var(--color-accent)' : 'inherit' }} />
                   <span>{m.label}</span>
                 </button>
               );
@@ -179,8 +175,8 @@ export const TrafficChart: React.FC<TrafficChartProps> = ({
           </div>
         </div>
 
-        {/* Right side: Resolution Selector & Legend */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+        {/* Right side: Legend & Resolution Selector */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)', flexWrap: 'wrap' }}>
           {/* Legend */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
@@ -198,7 +194,7 @@ export const TrafficChart: React.FC<TrafficChartProps> = ({
           {/* Resolution Pills */}
           <div
             style={{
-              display: 'flex',
+              display: 'inline-flex',
               backgroundColor: 'var(--color-surface-subtle)',
               border: '1px solid var(--color-border)',
               borderRadius: 'var(--radius-md)',
@@ -214,13 +210,13 @@ export const TrafficChart: React.FC<TrafficChartProps> = ({
                   padding: '3px 8px',
                   borderRadius: 'var(--radius-sm)',
                   fontSize: '0.6875rem',
-                  fontWeight: resolution === r ? 600 : 400,
+                  fontWeight: resolution === r ? 600 : 500,
                   backgroundColor: resolution === r ? 'var(--color-surface-hover)' : 'transparent',
                   color: resolution === r ? 'var(--color-text-primary)' : 'var(--color-text-muted)',
                   border: 'none',
                   cursor: 'pointer',
                   textTransform: 'capitalize',
-                  transition: 'var(--transition-fast)',
+                  transition: 'all var(--transition-fast)',
                 }}
               >
                 {r === 'auto' && data ? `Auto (${data.resolution})` : r}
@@ -259,7 +255,7 @@ export const TrafficChart: React.FC<TrafficChartProps> = ({
           >
             <defs>
               <linearGradient id="primaryAreaGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="var(--color-accent)" stopOpacity="0.32" />
+                <stop offset="0%" stopColor="var(--color-accent)" stopOpacity="0.28" />
                 <stop offset="100%" stopColor="var(--color-accent)" stopOpacity="0.0" />
               </linearGradient>
             </defs>
@@ -295,7 +291,6 @@ export const TrafficChart: React.FC<TrafficChartProps> = ({
 
             {/* X-Axis Date Labels */}
             {series.map((p, i) => {
-              // Only render periodic labels to avoid overcrowding
               const total = series.length;
               const step = Math.max(1, Math.floor(total / 6));
               if (i % step !== 0 && i !== total - 1) return null;
@@ -356,7 +351,6 @@ export const TrafficChart: React.FC<TrafficChartProps> = ({
                   opacity="0.8"
                 />
 
-                {/* Primary Data Point Dot */}
                 <circle
                   cx={getX(hoverIndex)}
                   cy={getY(activePoint.value)}
@@ -366,7 +360,6 @@ export const TrafficChart: React.FC<TrafficChartProps> = ({
                   strokeWidth="2.5"
                 />
 
-                {/* Comparison Data Point Dot */}
                 {activePoint.comparisonValue !== undefined && activePoint.comparisonValue !== null && (
                   <circle
                     cx={getX(hoverIndex)}
@@ -391,12 +384,12 @@ export const TrafficChart: React.FC<TrafficChartProps> = ({
                 transform: getX(hoverIndex) > svgWidth * 0.7 ? 'translateX(-105%)' : 'translateX(10px)',
                 pointerEvents: 'none',
                 backgroundColor: 'var(--color-surface-base)',
-                border: '1px solid var(--color-border)',
+                border: '1px solid var(--color-border-strong)',
                 borderRadius: 'var(--radius-md)',
                 padding: 'var(--space-2) var(--space-3)',
                 boxShadow: 'var(--shadow-md)',
                 zIndex: 30,
-                minWidth: '130px',
+                minWidth: '140px',
                 backdropFilter: 'blur(8px)',
               }}
             >

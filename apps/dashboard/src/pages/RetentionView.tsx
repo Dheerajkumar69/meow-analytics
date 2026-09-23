@@ -23,6 +23,7 @@ import { MetricCard } from '../components/MetricCard.js';
 import { DateRangeSelector } from '../components/DateRangeSelector.js';
 import { TableSkeleton } from '../components/Skeleton.js';
 import { WidgetError } from '../components/WidgetError.js';
+import { EmptyAnalytics } from '../components/EmptyAnalytics.js';
 
 interface RetentionViewProps {
   project: Project | null;
@@ -95,6 +96,16 @@ export const RetentionView: React.FC<RetentionViewProps> = ({ project }) => {
     if (pct < 50) return 'rgba(34, 197, 94, 0.5)';
     return 'rgba(34, 197, 94, 0.75)';
   };
+
+  if (!project) {
+    return (
+      <EmptyAnalytics
+        title="Cohort Retention Analytics"
+        description="Select or create a project to inspect user retention cohorts, day/week/month returning visitors, and churn rates."
+        project={null}
+      />
+    );
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>

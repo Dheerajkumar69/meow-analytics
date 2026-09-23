@@ -23,6 +23,7 @@ import {
 import { MetricCard } from '../components/MetricCard.js';
 import { CardSkeleton, TableSkeleton } from '../components/Skeleton.js';
 import { WidgetError } from '../components/WidgetError.js';
+import { EmptyAnalytics } from '../components/EmptyAnalytics.js';
 
 interface RealtimeViewProps {
   project: Project | null;
@@ -98,6 +99,16 @@ export const RealtimeView: React.FC<RealtimeViewProps> = ({ project }) => {
       return isoString;
     }
   };
+
+  if (!project) {
+    return (
+      <EmptyAnalytics
+        title="Real-Time Traffic Stream"
+        description="Select or create a project to inspect active live visitors and incoming event streams."
+        project={null}
+      />
+    );
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>

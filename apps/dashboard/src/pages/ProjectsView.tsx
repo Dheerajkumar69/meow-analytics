@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Project, ProjectDomain, ApiKey, ApiKeyCreatedResponse, api } from '../lib/api.js';
 import { Modal } from '../components/Modal.js';
+import { EmptyAnalytics } from '../components/EmptyAnalytics.js';
 import {
   Plus,
   Trash2,
@@ -267,12 +268,11 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
 
   if (!selectedProject) {
     return (
-      <div className="card" style={{ padding: 'var(--space-8)', textAlign: 'center' }}>
-        <h3>No Project Selected</h3>
-        <p style={{ marginTop: 'var(--space-2)' }}>
-          Create a new project using the button in the top bar to get started.
-        </p>
-      </div>
+      <EmptyAnalytics
+        title="Projects & Security Keys"
+        description="Select an existing project or click 'New Project' in the header bar to configure domain whitelisting, API credentials, and data retention policies."
+        project={null}
+      />
     );
   }
 

@@ -17,26 +17,26 @@ export const Skeleton: React.FC<SkeletonProps> = ({
 }) => {
   return (
     <div
-      className={`skeleton-shimmer ${className}`}
+      className={`skeleton ${className}`}
       style={{
         width,
         height,
         borderRadius,
-        backgroundColor: 'var(--color-surface-hover)',
         ...style,
       }}
+      aria-hidden="true"
     />
   );
 };
 
 export const CardSkeleton: React.FC<{ height?: string | number }> = ({ height }) => {
   return (
-    <div className="card" style={{ padding: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', ...(height ? { minHeight: height } : {}) }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <div className="card kpi-card" style={height ? { minHeight: height } : {}}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-2)' }}>
         <Skeleton width="45%" height="0.875rem" />
-        <Skeleton width="18px" height="18px" borderRadius="50%" />
+        <Skeleton width="28px" height="28px" borderRadius="var(--radius-md)" />
       </div>
-      <Skeleton width="60%" height="2rem" style={{ margin: 'var(--space-1) 0' }} />
+      <Skeleton width="60%" height="2rem" style={{ margin: 'var(--space-2) 0' }} />
       <Skeleton width="75%" height="0.75rem" />
     </div>
   );
@@ -46,7 +46,7 @@ export const ChartSkeleton: React.FC = () => {
   return (
     <div className="card" style={{ padding: 'var(--space-5)', minHeight: '320px', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Skeleton width="200px" height="1.25rem" />
+        <Skeleton width="180px" height="1.25rem" />
         <Skeleton width="160px" height="2rem" borderRadius="var(--radius-md)" />
       </div>
       <Skeleton width="100%" height="220px" borderRadius="var(--radius-md)" />

@@ -58,12 +58,10 @@ export const MetricCard: React.FC<MetricCardProps> = ({
 
   if (error) {
     return (
-      <div className="card" style={{ padding: 'var(--space-4)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-2)' }}>
-          <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>
-            {title}
-          </span>
-          {renderIcon()}
+      <div className="card kpi-card">
+        <div className="kpi-header">
+          <span className="kpi-title">{title}</span>
+          <div className="kpi-icon-wrap">{renderIcon()}</div>
         </div>
         <WidgetError message={error} onRetry={onRetry} height="80px" />
       </div>
@@ -89,85 +87,35 @@ export const MetricCard: React.FC<MetricCardProps> = ({
   const isGood = invertChangeColor ? isNegative : isPositive;
   const isBad = invertChangeColor ? isPositive : isNegative;
 
-  const deltaBg = isGood
-    ? 'var(--color-accent-subtle)'
-    : isBad
-    ? 'var(--color-danger-subtle)'
-    : 'var(--color-surface-hover)';
-
-  const deltaColor = isGood
-    ? 'var(--color-accent-text)'
-    : isBad
-    ? 'var(--color-danger-text)'
-    : 'var(--color-text-muted)';
+  const deltaClass = isZero
+    ? 'delta-pill delta-neutral'
+    : isGood
+    ? 'delta-pill delta-positive'
+    : 'delta-pill delta-negative';
 
   return (
-    <div
-      className="card hover-lift"
-      style={{
-        padding: 'var(--space-4)',
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'space-between',
-        position: 'relative',
-      }}
-    >
+    <div className="card kpi-card card-hover">
       <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>
-            {title}
-          </span>
-          <div
-            style={{
-              width: '28px',
-              height: '28px',
-              borderRadius: 'var(--radius-md)',
-              backgroundColor: 'var(--color-surface-subtle)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            {renderIcon()}
-          </div>
+        <div className="kpi-header">
+          <span className="kpi-title">{title}</span>
+          <div className="kpi-icon-wrap">{renderIcon()}</div>
         </div>
 
-        <div
-          style={{
-            fontSize: '1.75rem',
-            fontWeight: 700,
-            margin: 'var(--space-2) 0',
-            letterSpacing: '-0.02em',
-            fontFamily: 'var(--font-sans)',
-            color: 'var(--color-text-primary)',
-          }}
-        >
+        <div className="kpi-value tabular-nums">
           {typeof value === 'number' ? value.toLocaleString() : value}
         </div>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '4px' }}>
+      <div className="kpi-footer">
         {effectiveChange !== undefined && effectiveChange !== null ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '2px',
-                padding: '2px 6px',
-                borderRadius: 'var(--radius-sm)',
-                backgroundColor: deltaBg,
-                color: deltaColor,
-                fontSize: '0.75rem',
-                fontWeight: 600,
-              }}
-            >
+            <span className={deltaClass}>
               {isPositive ? (
-                <ArrowUpRight size={12} />
+                <ArrowUpRight size={11} strokeWidth={2.5} />
               ) : isNegative ? (
-                <ArrowDownRight size={12} />
+                <ArrowDownRight size={11} strokeWidth={2.5} />
               ) : (
-                <Minus size={12} />
+                <Minus size={11} strokeWidth={2.5} />
               )}
               {isPositive ? `+${effectiveChange}%` : `${effectiveChange}%`}
             </span>
@@ -179,7 +127,9 @@ export const MetricCard: React.FC<MetricCardProps> = ({
           <span style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>
             {subtext}
           </span>
-        ) : null}
+        ) : (
+          <div />
+        )}
 
         {effectiveTooltip && (
           <span
@@ -191,6 +141,7 @@ export const MetricCard: React.FC<MetricCardProps> = ({
               cursor: 'help',
               marginLeft: 'auto',
             }}
+            aria-label={effectiveTooltip}
           >
             <Info size={12} />
           </span>
