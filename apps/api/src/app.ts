@@ -52,7 +52,10 @@ export async function buildApp(opts: FastifyServerOptions = {}): Promise<Fastify
       reply.header('Access-Control-Allow-Origin', origin);
       reply.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
       reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, x-admin-secret');
-      reply.header('Access-Control-Allow-Credentials', 'true');
+      // BUG-13 FIX: Removed Access-Control-Allow-Credentials:true from collect/performance
+      // endpoints. Analytics event ingestion doesn't require credentialed cross-origin
+      // requests — the SDK sends visitor IDs in the payload body, not as cookies.
+      // Credentials:true with a reflected origin is an unnecessarily broad security posture.
 
       if (request.method === 'OPTIONS') {
         return reply.status(204).send();

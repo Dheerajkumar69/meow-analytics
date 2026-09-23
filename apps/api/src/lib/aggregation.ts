@@ -54,6 +54,7 @@ export async function runHourlyAggregation(options: AggregationOptions = {}): Pr
         FROM events e
         WHERE e.site_id = ${site_id}
           AND e.timestamp <= ${upTo}
+          AND e.is_bot = FALSE
           ${sinceSql}
         GROUP BY date_trunc('hour', e.timestamp)
         ORDER BY bucket_time ASC
@@ -66,6 +67,7 @@ export async function runHourlyAggregation(options: AggregationOptions = {}): Pr
         FROM sessions s
         WHERE s.site_id = ${site_id}
           AND s.started_at <= ${upTo}
+          AND s.is_bot = FALSE
           ${since ? sql`AND s.started_at >= ${since}` : sql``}
         GROUP BY date_trunc('hour', s.started_at)
       `),
@@ -140,7 +142,12 @@ export async function runDailyAggregation(options: AggregationOptions = {}): Pro
       SELECT
         date_trunc('day', h.bucket_time) as bucket_date,
         SUM(h.page_views)::int as page_views,
-        MAX(h.visitors)::int as visitors,
+        -- BUG-6 FIX: Use SUM(h.visitors) instead of MAX(h.visitors).
+        -- MAX only returned the single busiest hour's visitors, not the daily total.
+        -- SUM is an approximation (same visitor in multiple hours is counted N times),
+        -- but it is always >= actual unique visitors and consistent with timeseries.
+        -- For fully accurate daily uniques, query sessions/events directly.
+        SUM(h.visitors)::int as visitors,
         SUM(h.sessions)::int as sessions,
         SUM(h.events)::int as events,
         SUM(h.bounces)::int as bounces,

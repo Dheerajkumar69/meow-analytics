@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Project,
   api,
@@ -26,19 +26,31 @@ import {
 import { Modal } from '../components/Modal.js';
 import { CardSkeleton } from '../components/Skeleton.js';
 import { EmptyAnalytics } from '../components/EmptyAnalytics.js';
+import {
+  parseDashboardUrlState,
+  updateDashboardUrlState,
+  calculatePresetDateRange,
+  TimeRangePreset,
+} from '../lib/urlState.js';
+import { DateRangeSelector } from '../components/DateRangeSelector.js';
 
 interface EventsViewProps {
   project: Project | null;
 }
 
 export const EventsView: React.FC<EventsViewProps> = ({ project }) => {
+  // BUG-22 FIX: Use shared URL date state so date range persists across view changes.
+  const initialUrlState = useRef(parseDashboardUrlState());
+  const [dateRangePreset, setDateRangePreset] = useState<TimeRangePreset>(initialUrlState.current.range);
+  const [customFrom, setCustomFrom] = useState<string | undefined>(initialUrlState.current.from);
+  const [customTo, setCustomTo] = useState<string | undefined>(initialUrlState.current.to);
+
   const [eventsData, setEventsData] = useState<EventsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<'count' | 'visitors' | 'sessions' | 'name'>('count');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-  const [timeRange, setTimeRange] = useState<'24h' | '7d' | '30d' | '90d'>('30d');
 
   // Detail Modal State
   const [selectedEventName, setSelectedEventName] = useState<string | null>(null);
@@ -51,16 +63,18 @@ export const EventsView: React.FC<EventsViewProps> = ({ project }) => {
   const [propertyAnalytics, setPropertyAnalytics] = useState<EventPropertyAnalyticsResponse | null>(null);
   const [propLoading, setPropLoading] = useState(false);
 
-  // Calculate Date Range
+  // Calculate Date Range from shared URL state
   const getDates = useCallback(() => {
-    const to = new Date();
-    let from = new Date();
-    if (timeRange === '24h') from.setTime(to.getTime() - 24 * 60 * 60 * 1000);
-    else if (timeRange === '7d') from.setTime(to.getTime() - 7 * 24 * 60 * 60 * 1000);
-    else if (timeRange === '30d') from.setTime(to.getTime() - 30 * 24 * 60 * 60 * 1000);
-    else if (timeRange === '90d') from.setTime(to.getTime() - 90 * 24 * 60 * 60 * 1000);
-    return { from: from.toISOString(), to: to.toISOString() };
-  }, [timeRange]);
+    return calculatePresetDateRange(dateRangePreset, customFrom, customTo);
+  }, [dateRangePreset, customFrom, customTo]);
+
+  const handleRangeChange = (preset: TimeRangePreset, from?: string, to?: string) => {
+    setDateRangePreset(preset);
+    setCustomFrom(from);
+    setCustomTo(to);
+    updateDashboardUrlState({ range: preset, from, to });
+  };
+
 
   // Fetch Events
   const fetchEvents = useCallback(async () => {
@@ -190,19 +204,13 @@ export const EventsView: React.FC<EventsViewProps> = ({ project }) => {
         </div>
 
         <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap' }}>
-          {/* Time Range Selector */}
-          <div className="btn-group" style={{ display: 'inline-flex', backgroundColor: 'var(--color-surface-subtle)', borderRadius: 'var(--radius-md)', padding: '2px' }}>
-            {(['24h', '7d', '30d', '90d'] as const).map((r) => (
-              <button
-                key={r}
-                onClick={() => setTimeRange(r)}
-                className={`btn btn-sm ${timeRange === r ? 'btn-primary' : 'btn-ghost'}`}
-                style={{ borderRadius: 'var(--radius-sm)', textTransform: 'uppercase', fontSize: '0.75rem', padding: '4px 10px' }}
-              >
-                {r}
-              </button>
-            ))}
-          </div>
+          {/* Shared Date Range Selector (BUG-22 FIX) */}
+          <DateRangeSelector
+            preset={dateRangePreset}
+            customFrom={customFrom}
+            customTo={customTo}
+            onRangeChange={handleRangeChange}
+          />
 
           <button
             onClick={fetchEvents}

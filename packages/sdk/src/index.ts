@@ -953,6 +953,50 @@ export const MeowAnalytics = {
   },
 
   /**
+   * Track a site search event.
+   * Per masterprompt section 35: meowAnalytics.trackSearch("spiderman")
+   *
+   * BUG-25 FIX: This method was missing from the SDK.
+   *
+   * @param query - The search query the user entered.
+   * @param properties - Optional additional properties (e.g. resultsCount, category).
+   */
+  trackSearch(query: string, properties?: Record<string, string | number | boolean>): void {
+    try {
+      if (!isInitialized || !isEnabled || !eventQueue || !currentConfig) {
+        return;
+      }
+      if (!query || typeof query !== 'string') return;
+
+      const cleanQuery = query.trim().slice(0, 512);
+      if (!cleanQuery) return;
+
+      const hostname = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+      const currentPath = sanitizePath();
+
+      const event: MeowEvent = {
+        eventId: generateUUID(),
+        type: 'custom',
+        eventName: 'search',
+        properties: {
+          query: cleanQuery,
+          ...(properties || {}),
+        },
+        timestamp: Date.now(),
+        path: currentPath,
+        hostname,
+        referrer: typeof document !== 'undefined' ? document.referrer : '',
+        visitorId: getOrCreateVisitorId(),
+        sessionId: getOrCreateSessionId(),
+      };
+
+      eventQueue.enqueue(event);
+    } catch {
+      // Fail silently
+    }
+  },
+
+  /**
    * Destroy and clean up listeners/timers.
    */
   destroy(): void {
@@ -991,11 +1035,16 @@ export const MeowAnalytics = {
       }
       currentConfig = null;
       isInitialized = false;
+      // BUG-19 FIX: Reset in-memory IDs on destroy so that re-initialization
+      // with a different siteId (or a different site on the same page) does not
+      // inherit stale visitor/session IDs from the previous instance.
+      inMemoryVisitorId = null;
     } catch {
       // Fail silently
     }
   },
 };
+
 
 // --- Automatic Script Tag Installation ---
 // Support: <script defer src=".../meow.js" data-site-id="SITE_ID"></script>

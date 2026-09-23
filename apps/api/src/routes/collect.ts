@@ -144,14 +144,9 @@ export const collectRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
       });
     }
 
-    if (!project || project.status !== 'active') {
-      return reply.status(400).send({
-        error: {
-          code: 'INVALID_SITE_ID',
-          message: `Site ID "${siteId}" does not exist or is not active`,
-        },
-      });
-    }
+    // BUG-8 FIX: Removed redundant second project status check here.
+    // The check at L127 already handles the non-cached path, and the cache
+    // only stores validated active projects, so this second check was dead code.
 
     // 3. Hostname Normalization & Domain Validation
     for (const ev of incomingEvents) {
@@ -196,8 +191,10 @@ export const collectRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
     }
 
     // 4. Server-Side Context & Privacy Mode Application
-    const forwarded = request.headers['x-forwarded-for'];
-    const rawIp = (typeof forwarded === 'string' ? forwarded.split(',')[0]?.trim() : Array.isArray(forwarded) ? forwarded[0]?.trim() : '') || request.ip || '127.0.0.1';
+    // BUG-3 FIX: Use request.ip which Fastify resolves correctly via trustProxy:true.
+    // Manual X-Forwarded-For parsing was spoofable; request.ip uses the rightmost
+    // untrusted IP based on the configured trust proxy chain.
+    const rawIp = request.ip || '127.0.0.1';
     const rawUserAgent = ((request.headers['user-agent'] || '').slice(0, 512) || 'unknown').trim();
     const originHeader = (((request.headers.origin || request.headers.referer || '') as string).slice(0, 255) || null);
     const meowSecret = getConfig().MEOW_SECRET;
@@ -338,6 +335,11 @@ export const collectRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
               targetSessionId = generateSessionId();
             }
           } else {
+            // BUG-2 FIX: When the client sends a session ID that has expired (>30 min
+            // inactivity), generate a brand-new session ID instead of mangling the old
+            // one with a timestamp suffix. The old approach created orphan sessions because
+            // the client would keep sending the old ID, causing every subsequent event to
+            // produce a different mangled ID and a separate orphan session.
             const existingSession = await tx.execute(sql`
               SELECT session_id, last_seen_at
               FROM sessions
@@ -348,7 +350,7 @@ export const collectRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
             if (existingSession.rows.length > 0) {
               const lastActive = new Date((existingSession.rows[0] as any).last_seen_at).getTime();
               if (evTimestamp.getTime() - lastActive > SESSION_INACTIVITY_TIMEOUT_MS) {
-                targetSessionId = `${targetSessionId}_${Math.floor(evTimestamp.getTime() / 1000)}`;
+                targetSessionId = generateSessionId();
               }
             }
           }
@@ -399,9 +401,16 @@ export const collectRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
 
         // --- 5D. Upsert Session & Specific Event Tables (Only for non-duplicate events) ---
         const isPageView = ev.type === 'page_view';
+        const isPing = ev.type === 'ping';
         const pvIncrement = isPageView ? 1 : 0;
+        // BUG-23 FIX: Ping events are keep-alive signals; don't count them as interactions.
+        const evIncrement = isPing ? 0 : 1;
         const newSesId = generateSessionInternalId();
 
+        // BUG-12 FIX: Skip visitor/session upsert for confirmed bots.
+        // Bot data is stored in events for audit purposes but should not
+        // pollute the visitors/sessions tables with bot-generated records.
+        if (!isBot) {
         await tx.execute(sql`
           INSERT INTO sessions (
             id, session_id, site_id, visitor_id, started_at, last_seen_at,
@@ -412,7 +421,9 @@ export const collectRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
             device_type, browser, os, language, screen_resolution, is_bot, created_at
           ) VALUES (
             ${newSesId}, ${targetSessionId}, ${project.site_id}, ${visitorDbId}, ${evTimestamp}, ${evTimestamp},
-            ${ev.path}, ${ev.path}, ${pvIncrement}, 1, ${pvIncrement <= 1}, 0, ${isReturning},
+            ${ev.path}, ${ev.path}, ${pvIncrement}, ${evIncrement},
+            ${isPageView ? sql`TRUE` : sql`FALSE`},
+            0, ${isReturning},
             ${referrerSource}, ${referrerHostname}, ${referrerUrl},
             ${utmSource}, ${utmMedium}, ${utmCampaign}, ${utmTerm}, ${utmContent},
             ${countryCode}, ${countryName}, ${region},
@@ -420,15 +431,19 @@ export const collectRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
           )
           ON CONFLICT (site_id, session_id) DO UPDATE SET
             last_seen_at = GREATEST(sessions.last_seen_at, EXCLUDED.last_seen_at),
-            exit_page = EXCLUDED.exit_page,
-            page_views = sessions.page_views + EXCLUDED.page_views,
-            event_count = sessions.event_count + EXCLUDED.event_count,
-            is_bounce = (sessions.page_views + EXCLUDED.page_views) <= 1,
+            exit_page = CASE WHEN EXCLUDED.exit_page <> '' THEN EXCLUDED.exit_page ELSE sessions.exit_page END,
+            page_views = sessions.page_views + ${pvIncrement},
+            event_count = sessions.event_count + ${evIncrement},
+            -- BUG-1 FIX: A session is a bounce only when it has exactly 1 page_view total.
+            -- We compute from the updated page_views value, not the EXCLUDED row, to avoid
+            -- the old bug where pvIncrement=0 (custom event) incorrectly kept is_bounce=TRUE.
+            is_bounce = (sessions.page_views + ${pvIncrement}) <= 1,
             duration_seconds = GREATEST(0, CAST(EXTRACT(EPOCH FROM (GREATEST(sessions.last_seen_at, EXCLUDED.last_seen_at) - sessions.started_at)) AS INTEGER))
         `);
+        } // end !isBot guard
 
         // If page_view, insert into page_views table
-        if (isPageView) {
+        if (isPageView && !isBot) {
           const pageViewId = generatePageViewId();
           await tx.execute(sql`
             INSERT INTO page_views (
@@ -451,8 +466,12 @@ export const collectRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
           `);
         }
 
-        // If error event, insert into error_events table (Section 11, 12, 13)
-        if (ev.type === 'error' || eventName === 'error') {
+        // BUG-18 FIX: Use ev.type (the event type field) exclusively to decide which
+        // specialised table to insert into. Previously, checking 'eventName === "error"'
+        // caused any custom event named "error" (e.g. meowAnalytics.track("error", {...}))
+        // to be double-inserted into error_events. The type field is set by the SDK and
+        // reflects the actual event category, not the user-defined name.
+        if (ev.type === 'error') {
           const errorProps = (ev.properties || {}) as Record<string, any>;
           const rawType = String(errorProps.errorType || 'Error');
           const rawMsg = String(errorProps.message || 'Unknown error');
@@ -472,7 +491,8 @@ export const collectRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
         }
 
         // If performance event, insert into performance_metrics table (Phase 7)
-        if (ev.type === 'performance' || eventName === 'performance') {
+        // BUG-18 FIX: Same as above - use ev.type only.
+        if (ev.type === 'performance') {
           const perfProps = (ev.properties || {}) as Record<string, any>;
           const perfId = `perf_${ev.eventId}`;
           const lcp = typeof perfProps.lcp === 'number' ? perfProps.lcp : null;
@@ -588,9 +608,8 @@ export const collectRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
     }
 
     // IP, Geo, and User-Agent parsing
-    const rawIp = request.headers['x-forwarded-for']
-      ? String(request.headers['x-forwarded-for']).split(',')[0]!.trim()
-      : request.ip || '127.0.0.1';
+    // BUG-3 FIX: Use request.ip (Fastify trustProxy resolves the real client IP).
+    const rawIp = request.ip || '127.0.0.1';
     const geo = await defaultGeoService.lookup(rawIp, request.headers as Record<string, string | string[] | undefined>);
     const countryCode = geo.countryCode || 'Unknown';
     const countryName = geo.countryName || 'Unknown';

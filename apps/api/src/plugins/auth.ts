@@ -134,18 +134,31 @@ export async function requireProjectAuth(request: FastifyRequest, reply: Fastify
 
 /**
  * Pre-handler hook for analytics queries.
- * In production or when ENFORCE_ANALYTICS_AUTH=true, requires credentials.
- * If credentials are provided in any environment, strictly validates them and enforces project access.
+ * If any auth credentials are provided, they are strictly validated.
+ * If no credentials are provided:
+ *   - In production (NODE_ENV=production), access is DENIED unless ALLOW_PUBLIC_ANALYTICS=true
+ *   - If ENFORCE_ANALYTICS_AUTH=true, access is always DENIED without credentials
+ *   - Otherwise (development), access is allowed for convenience
+ *
+ * BUG-9 FIX: Previously, analytics data was publicly readable without configuration.
+ * Now production environments are secure by default.
  */
 export async function requireAnalyticsAuth(request: FastifyRequest, reply: FastifyReply): Promise<void> {
   const token = extractToken(request);
 
+  // If credentials are provided, always validate them strictly
   if (token) {
     return requireProjectAuth(request, reply);
   }
 
-  if (process.env.ENFORCE_ANALYTICS_AUTH === 'true') {
-    throw new UnauthorizedError('Authentication credentials required to access analytics');
+  const isProduction = process.env.NODE_ENV === 'production';
+  const enforceAuth = process.env.ENFORCE_ANALYTICS_AUTH === 'true';
+  const allowPublic = process.env.ALLOW_PUBLIC_ANALYTICS === 'true';
+
+  // Block unauthenticated requests in production or when explicitly enforced,
+  // unless the operator has opted-in to public analytics access.
+  if ((isProduction || enforceAuth) && !allowPublic) {
+    throw new UnauthorizedError('Authentication credentials required to access analytics. Set ALLOW_PUBLIC_ANALYTICS=true to disable this check.');
   }
 }
 

@@ -143,6 +143,8 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
         SELECT id, site_id, anonymous_id, first_seen_at, last_seen_at, first_path, last_path, first_referrer, last_referrer, created_at
         FROM visitors
         WHERE site_id = ${siteId}
+          AND last_seen_at >= ${fromDate}
+          AND first_seen_at <= ${toDate}
         ORDER BY last_seen_at DESC
         LIMIT 50
       `),
@@ -226,6 +228,8 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
                referrer_source, referrer_hostname, country_code, country_name, device_type, browser, os, is_bot, created_at
         FROM sessions
         WHERE site_id = ${siteId}
+          AND started_at <= ${toDate}
+          AND last_seen_at >= ${fromDate}
           ${botFilter}
           ${sessionsFilter}
         ORDER BY last_seen_at DESC
@@ -2032,6 +2036,11 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
         ${eventsFilter}
         AND (${combinedStepCond})
       ORDER BY timestamp ASC
+      -- BUG-15 FIX: Cap result set to 100k rows to prevent OOM on large sites.
+      -- Funnels on very high-traffic sites should use a dedicated SQL window function
+      -- approach. This limit provides a safety valve while maintaining accuracy for
+      -- sites with up to ~100k matched events in the queried period.
+      LIMIT 100000
     `);
 
     const visitorEventsMap = new Map<string, Array<{ type: string; eventName: string; path: string; ts: number }>>();
@@ -2183,20 +2192,18 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
         const pStart = new Date(cStart.getTime() + p * periodMs);
         const pEnd = new Date(cEnd.getTime() + p * periodMs);
 
-        const retRes = await db.execute(sql`
+        // BUG-16 FIX: Use the pre-fetched visIds array with ANY() instead of a correlated
+        // IN (SELECT ...) subquery. This avoids re-executing the visitors subquery on each
+        // (cohort x period) iteration and improves index scan efficiency in PostgreSQL.
+        const retRes = visIds.length > 0 ? await db.execute(sql`
           SELECT COUNT(DISTINCT visitor_id) AS returning_count
           FROM sessions
           WHERE site_id = ${siteId}
             AND started_at >= ${pStart}
             AND started_at < ${pEnd}
             AND is_bot = FALSE
-            AND visitor_id IN (
-              SELECT id FROM visitors
-              WHERE site_id = ${siteId}
-                AND first_seen_at >= ${cStart}
-                AND first_seen_at < ${cEnd}
-            )
-        `);
+            AND visitor_id = ANY(${sql.raw(`ARRAY[${visIds.map(id => `'${id.replace(/'/g, "''")}'`).join(',')}]`)})
+        `) : { rows: [{ returning_count: 0 }] };
 
         const returning = Number((retRes.rows[0] as any)?.returning_count || 0);
         const percentage = Number(((returning / cohortSize) * 100).toFixed(1));
@@ -2886,6 +2893,27 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
           message: `Project with siteId "${siteId}" not found`,
         },
       });
+    }
+
+    // BUG-24 FIX: Validate that the authenticated project matches the requested siteId.
+    // Without this check, an API key for project A could read project B's performance
+    // data by supplying B's siteId. The auth hook sets request.auth when a token is used.
+    const authContext = (request as any).auth;
+    if (authContext && authContext.type === 'api_key') {
+      // Resolve the authenticated project's site_id
+      const authProjRows = await db
+        .select({ site_id: projects.site_id })
+        .from(projects)
+        .where(eq(projects.id, authContext.projectId))
+        .limit(1);
+      if (!authProjRows[0] || authProjRows[0].site_id !== siteId) {
+        return reply.status(403).send({
+          error: {
+            code: 'FORBIDDEN',
+            message: 'API key is not authorized for the requested site',
+          },
+        });
+      }
     }
 
     const now = new Date();

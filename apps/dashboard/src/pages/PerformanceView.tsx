@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Project,
   api,
@@ -26,30 +26,45 @@ import {
 } from 'lucide-react';
 import { CardSkeleton } from '../components/Skeleton.js';
 import { EmptyAnalytics } from '../components/EmptyAnalytics.js';
+import {
+  parseDashboardUrlState,
+  updateDashboardUrlState,
+  calculatePresetDateRange,
+  TimeRangePreset,
+} from '../lib/urlState.js';
+import { DateRangeSelector } from '../components/DateRangeSelector.js';
 
 interface PerformanceViewProps {
   project: Project | null;
 }
 
 export const PerformanceView: React.FC<PerformanceViewProps> = ({ project }) => {
+  // BUG-22 FIX: Use shared URL date state so date range persists across view changes.
+  const initialUrlState = useRef(parseDashboardUrlState());
+  const [dateRangePreset, setDateRangePreset] = useState<TimeRangePreset>(initialUrlState.current.range);
+  const [customFrom, setCustomFrom] = useState<string | undefined>(initialUrlState.current.from);
+  const [customTo, setCustomTo] = useState<string | undefined>(initialUrlState.current.to);
+
   const [data, setData] = useState<PerformanceAnalyticsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [timeRange, setTimeRange] = useState<'24h' | '7d' | '30d'>('7d');
   const [selectedRoute, setSelectedRoute] = useState<string>('all');
   const [selectedDevice, setSelectedDevice] = useState<'all' | 'desktop' | 'mobile' | 'tablet'>('all');
   const [expandedMetric, setExpandedMetric] = useState<string | null>(null);
   const [showThresholdGuide, setShowThresholdGuide] = useState(false);
 
-  // Date range calculator
+  // Date range calculator using shared URL state
   const getDates = useCallback(() => {
-    const to = new Date();
-    const from = new Date();
-    if (timeRange === '24h') from.setTime(to.getTime() - 24 * 60 * 60 * 1000);
-    else if (timeRange === '7d') from.setTime(to.getTime() - 7 * 24 * 60 * 60 * 1000);
-    else if (timeRange === '30d') from.setTime(to.getTime() - 30 * 24 * 60 * 60 * 1000);
-    return { from: from.toISOString(), to: to.toISOString() };
-  }, [timeRange]);
+    return calculatePresetDateRange(dateRangePreset, customFrom, customTo);
+  }, [dateRangePreset, customFrom, customTo]);
+
+  const handleRangeChange = (preset: TimeRangePreset, from?: string, to?: string) => {
+    setDateRangePreset(preset);
+    setCustomFrom(from);
+    setCustomTo(to);
+    updateDashboardUrlState({ range: preset, from, to });
+  };
+
 
   const fetchPerformance = useCallback(async () => {
     if (!project?.site_id) return;
