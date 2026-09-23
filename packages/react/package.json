@@ -12,7 +12,7 @@
     "react": ">=17.0.0"
   },
   "dependencies": {
-    "@meow-analytics/sdk": "workspace:*"
+    "@meow-analytics/sdk": "*"
   },
   "devDependencies": {
     "@types/react": "^18.2.0",
