@@ -9,6 +9,7 @@ import {
 import { getDatabase, projects, projectDomains } from '@meow-analytics/database';
 import { eq, and, ne } from 'drizzle-orm';
 import { NotFoundError, ConflictError } from '../plugins/error-handler.js';
+import { projectValidationCache } from '../lib/cache.js';
 
 export const domainRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   // All domain endpoints require admin authentication
@@ -61,6 +62,7 @@ export const domainRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
     };
 
     await db.insert(projectDomains).values(newDomain);
+    projectValidationCache.invalidate(projectId);
 
     return reply.status(201).send({
       ...newDomain,
@@ -110,6 +112,7 @@ export const domainRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
     await db
       .delete(projectDomains)
       .where(and(eq(projectDomains.id, domainId), eq(projectDomains.project_id, projectId)));
+    projectValidationCache.invalidate(projectId);
 
     return reply.status(200).send({
       success: true,

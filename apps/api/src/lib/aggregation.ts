@@ -5,6 +5,8 @@ import { generateId } from '@meow-analytics/shared';
 export interface AggregationOptions {
   siteId?: string;
   upToDate?: Date;
+  sinceDate?: Date;
+  all?: boolean;
   batchHours?: number;
 }
 
@@ -22,6 +24,8 @@ export interface AggregationResult {
 export async function runHourlyAggregation(options: AggregationOptions = {}): Promise<number> {
   const db = getDatabase();
   const upTo = options.upToDate || new Date();
+  const since = options.sinceDate || (options.all ? null : new Date(Date.now() - 48 * 3600 * 1000));
+  const sinceSql = since ? sql`AND e.timestamp >= ${since}` : sql``;
 
   // Find target sites
   let siteIds: string[] = [];
@@ -38,38 +42,50 @@ export async function runHourlyAggregation(options: AggregationOptions = {}): Pr
   let totalAggregated = 0;
 
   for (const site_id of siteIds) {
-    // Group raw events by hour up to the specified date
-    const rows = await db.execute(sql`
-      SELECT
-        date_trunc('hour', e.timestamp) as bucket_time,
-        COUNT(e.event_id)::int as total_events,
-        COUNT(CASE WHEN e.type = 'page_view' THEN 1 END)::int as page_views,
-        COUNT(DISTINCT e.visitor_id)::int as visitors,
-        COUNT(DISTINCT e.session_id)::int as sessions
-      FROM events e
-      WHERE e.site_id = ${site_id}
-        AND e.timestamp <= ${upTo}
-      GROUP BY date_trunc('hour', e.timestamp)
-      ORDER BY bucket_time ASC
-    `);
-
-    for (const r of rows.rows as any[]) {
-      const bucketTime = new Date(r.bucket_time);
-      const nextHour = new Date(bucketTime.getTime() + 3600 * 1000);
-
-      // Session stats for this bucket
-      const sessionStats = await db.execute(sql`
+    // Concurrently group raw events and sessions by hour
+    const [rows, sessionRows] = await Promise.all([
+      db.execute(sql`
         SELECT
+          date_trunc('hour', e.timestamp) as bucket_time,
+          COUNT(e.event_id)::int as total_events,
+          COUNT(CASE WHEN e.type = 'page_view' THEN 1 END)::int as page_views,
+          COUNT(DISTINCT e.visitor_id)::int as visitors,
+          COUNT(DISTINCT e.session_id)::int as sessions
+        FROM events e
+        WHERE e.site_id = ${site_id}
+          AND e.timestamp <= ${upTo}
+          ${sinceSql}
+        GROUP BY date_trunc('hour', e.timestamp)
+        ORDER BY bucket_time ASC
+      `),
+      db.execute(sql`
+        SELECT
+          date_trunc('hour', s.started_at) as bucket_time,
           COUNT(CASE WHEN s.is_bounce = true THEN 1 END)::int as bounces,
           COALESCE(SUM(s.duration_seconds), 0)::int as total_duration
         FROM sessions s
         WHERE s.site_id = ${site_id}
-          AND s.started_at >= ${bucketTime}
-          AND s.started_at < ${nextHour}
-      `);
-      const sRow = (sessionStats.rows[0] as any) || {};
-      const bounces = Number(sRow.bounces || 0);
-      const durationSeconds = Number(sRow.total_duration || 0);
+          AND s.started_at <= ${upTo}
+          ${since ? sql`AND s.started_at >= ${since}` : sql``}
+        GROUP BY date_trunc('hour', s.started_at)
+      `),
+    ]);
+
+    const sessionStatsMap = new Map<string, { bounces: number; durationSeconds: number }>();
+    for (const s of sessionRows.rows as any[]) {
+      if (s.bucket_time) {
+        sessionStatsMap.set(new Date(s.bucket_time).toISOString(), {
+          bounces: Number(s.bounces || 0),
+          durationSeconds: Number(s.total_duration || 0),
+        });
+      }
+    }
+
+    for (const r of rows.rows as any[]) {
+      const bucketTime = new Date(r.bucket_time);
+      const sStat = sessionStatsMap.get(bucketTime.toISOString()) || { bounces: 0, durationSeconds: 0 };
+      const bounces = sStat.bounces;
+      const durationSeconds = sStat.durationSeconds;
 
       const id = `ha_${generateId()}`;
       await db.execute(sql`
@@ -103,6 +119,8 @@ export async function runHourlyAggregation(options: AggregationOptions = {}): Pr
 export async function runDailyAggregation(options: AggregationOptions = {}): Promise<number> {
   const db = getDatabase();
   const upTo = options.upToDate || new Date();
+  const since = options.sinceDate || (options.all ? null : new Date(Date.now() - 14 * 24 * 3600 * 1000));
+  const sinceSql = since ? sql`AND h.bucket_time >= ${since}` : sql``;
 
   let siteIds: string[] = [];
   if (options.siteId) {
@@ -130,6 +148,7 @@ export async function runDailyAggregation(options: AggregationOptions = {}): Pro
       FROM hourly_aggregates h
       WHERE h.site_id = ${site_id}
         AND h.bucket_time <= ${upTo}
+        ${sinceSql}
       GROUP BY date_trunc('day', h.bucket_time)
       ORDER BY bucket_date ASC
     `);

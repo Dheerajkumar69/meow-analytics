@@ -125,55 +125,36 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
     const botFilter = includeBots ? sql`` : sql`AND is_bot = FALSE`;
     const sessionsFilter = buildSessionsFilterSql(filters);
 
-    // 1. Unique visitors in period
-    const uniqueRes = await db.execute(sql`
-      SELECT COUNT(DISTINCT visitor_id) AS count
-      FROM sessions
-      WHERE site_id = ${siteId}
-        AND started_at <= ${toDate}
-        AND last_seen_at >= ${fromDate}
-        ${botFilter}
-        ${sessionsFilter}
-    `);
-    const uniqueVisitors = Number((uniqueRes.rows[0] as any)?.count || 0);
+    // Consolidated visitor counts and recent visitors list queried concurrently
+    const [countsRes, visitorsList] = await Promise.all([
+      db.execute(sql`
+        SELECT
+          COUNT(DISTINCT visitor_id) AS unique_visitors,
+          COUNT(DISTINCT CASE WHEN is_returning = FALSE AND started_at >= ${fromDate} THEN visitor_id END) AS new_visitors,
+          COUNT(DISTINCT CASE WHEN is_returning = TRUE THEN visitor_id END) AS returning_visitors
+        FROM sessions
+        WHERE site_id = ${siteId}
+          AND started_at <= ${toDate}
+          AND last_seen_at >= ${fromDate}
+          ${botFilter}
+          ${sessionsFilter}
+      `),
+      db.execute(sql`
+        SELECT id, site_id, anonymous_id, first_seen_at, last_seen_at, first_path, last_path, first_referrer, last_referrer, created_at
+        FROM visitors
+        WHERE site_id = ${siteId}
+        ORDER BY last_seen_at DESC
+        LIMIT 50
+      `),
+    ]);
 
-    // 2. New visitors
-    const newRes = await db.execute(sql`
-      SELECT COUNT(DISTINCT visitor_id) AS count
-      FROM sessions
-      WHERE site_id = ${siteId}
-        AND is_returning = FALSE
-        AND started_at >= ${fromDate}
-        AND started_at <= ${toDate}
-        ${botFilter}
-        ${sessionsFilter}
-    `);
-    const newVisitors = Number((newRes.rows[0] as any)?.count || 0);
-
-    // 3. Returning visitors
-    const returningRes = await db.execute(sql`
-      SELECT COUNT(DISTINCT visitor_id) AS count
-      FROM sessions
-      WHERE site_id = ${siteId}
-        AND is_returning = TRUE
-        AND started_at <= ${toDate}
-        AND last_seen_at >= ${fromDate}
-        ${botFilter}
-        ${sessionsFilter}
-    `);
-    const returningVisitors = Number((returningRes.rows[0] as any)?.count || 0);
+    const countsRow = (countsRes.rows[0] as any) || {};
+    const uniqueVisitors = Number(countsRow.unique_visitors || 0);
+    const newVisitors = Number(countsRow.new_visitors || 0);
+    const returningVisitors = Number(countsRow.returning_visitors || 0);
 
     const returningVisitorRate =
       uniqueVisitors > 0 ? Number(((returningVisitors / uniqueVisitors) * 100).toFixed(2)) : 0;
-
-    // Recent visitors list
-    const visitorsList = await db.execute(sql`
-      SELECT id, site_id, anonymous_id, first_seen_at, last_seen_at, first_path, last_path, first_referrer, last_referrer, created_at
-      FROM visitors
-      WHERE site_id = ${siteId}
-      ORDER BY last_seen_at DESC
-      LIMIT 50
-    `);
 
     const responsePayload = {
       siteId,
@@ -225,20 +206,32 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
     const botFilter = includeBots ? sql`` : sql`AND is_bot = FALSE`;
     const sessionsFilter = buildSessionsFilterSql(filters);
 
-    // Aggregate sessions metrics
-    const statsRes = await db.execute(sql`
-      SELECT
-        COUNT(*) AS total_sessions,
-        COALESCE(SUM(page_views), 0) AS total_page_views,
-        COALESCE(SUM(CASE WHEN is_bounce THEN 1 ELSE 0 END), 0) AS bounce_sessions,
-        COALESCE(SUM(duration_seconds), 0) AS total_duration_seconds
-      FROM sessions
-      WHERE site_id = ${siteId}
-        AND started_at <= ${toDate}
-        AND last_seen_at >= ${fromDate}
-        ${botFilter}
-        ${sessionsFilter}
-    `);
+    // Aggregate sessions metrics and recent sessions queried concurrently
+    const [statsRes, recentSessions] = await Promise.all([
+      db.execute(sql`
+        SELECT
+          COUNT(*) AS total_sessions,
+          COALESCE(SUM(page_views), 0) AS total_page_views,
+          COALESCE(SUM(CASE WHEN is_bounce THEN 1 ELSE 0 END), 0) AS bounce_sessions,
+          COALESCE(SUM(duration_seconds), 0) AS total_duration_seconds
+        FROM sessions
+        WHERE site_id = ${siteId}
+          AND started_at <= ${toDate}
+          AND last_seen_at >= ${fromDate}
+          ${botFilter}
+          ${sessionsFilter}
+      `),
+      db.execute(sql`
+        SELECT id, session_id, site_id, visitor_id, started_at, last_seen_at, landing_page, exit_page, page_views, event_count, is_bounce, duration_seconds, is_returning,
+               referrer_source, referrer_hostname, country_code, country_name, device_type, browser, os, is_bot, created_at
+        FROM sessions
+        WHERE site_id = ${siteId}
+          ${botFilter}
+          ${sessionsFilter}
+        ORDER BY last_seen_at DESC
+        LIMIT 50
+      `),
+    ]);
 
     const row = (statsRes.rows[0] as any) || {};
     const totalSessions = Number(row.total_sessions || 0);
@@ -252,17 +245,6 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
       totalSessions > 0 ? Number((totalDuration / totalSessions).toFixed(1)) : 0;
     const pagesPerSession =
       totalSessions > 0 ? Number((totalPageViews / totalSessions).toFixed(2)) : 0;
-
-    const recentSessions = await db.execute(sql`
-      SELECT id, session_id, site_id, visitor_id, started_at, last_seen_at, landing_page, exit_page, page_views, event_count, is_bounce, duration_seconds, is_returning,
-             referrer_source, referrer_hostname, country_code, country_name, device_type, browser, os, is_bot, created_at
-      FROM sessions
-      WHERE site_id = ${siteId}
-        ${botFilter}
-        ${sessionsFilter}
-      ORDER BY last_seen_at DESC
-      LIMIT 50
-    `);
 
     const responsePayload = {
       siteId,
@@ -439,78 +421,50 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
     }
     const botFilter = includeBots ? sql`` : sql`AND is_bot = FALSE`;
     const sessionsFilter = buildSessionsFilterSql(filters);
+    const pvFilter = buildPageViewsFilterSql(filters);
 
     async function fetchOverviewMetrics(fDate: Date, tDate: Date) {
-      // 1. Visitors metrics
-      const uniqueRes = await db.execute(sql`
-        SELECT COUNT(DISTINCT visitor_id) AS count
-        FROM sessions
-        WHERE site_id = ${siteId}
-          AND started_at <= ${tDate}
-          AND last_seen_at >= ${fDate}
-          ${botFilter}
-          ${sessionsFilter}
-      `);
-      const uniqueVisitors = Number((uniqueRes.rows[0] as any)?.count || 0);
+      // Execute consolidated sessions aggregate query and page views count concurrently
+      const [sessionsRes, pvRes] = await Promise.all([
+        db.execute(sql`
+          SELECT
+            COUNT(DISTINCT visitor_id) AS unique_visitors,
+            COUNT(DISTINCT CASE WHEN is_returning = FALSE AND started_at >= ${fDate} THEN visitor_id END) AS new_visitors,
+            COUNT(DISTINCT CASE WHEN is_returning = TRUE THEN visitor_id END) AS returning_visitors,
+            COUNT(*) AS total_sessions,
+            COALESCE(SUM(page_views), 0) AS total_session_pvs,
+            COALESCE(SUM(CASE WHEN is_bounce THEN 1 ELSE 0 END), 0) AS bounce_sessions,
+            COALESCE(SUM(duration_seconds), 0) AS total_duration_seconds
+          FROM sessions
+          WHERE site_id = ${siteId}
+            AND started_at <= ${tDate}
+            AND last_seen_at >= ${fDate}
+            ${botFilter}
+            ${sessionsFilter}
+        `),
+        db.execute(sql`
+          SELECT COUNT(*) AS total_page_views
+          FROM page_views
+          WHERE site_id = ${siteId}
+            AND timestamp >= ${fDate}
+            AND timestamp <= ${tDate}
+            ${botFilter}
+            ${pvFilter}
+        `),
+      ]);
 
-      const newRes = await db.execute(sql`
-        SELECT COUNT(DISTINCT visitor_id) AS count
-        FROM sessions
-        WHERE site_id = ${siteId}
-          AND is_returning = FALSE
-          AND started_at >= ${fDate}
-          AND started_at <= ${tDate}
-          ${botFilter}
-          ${sessionsFilter}
-      `);
-      const newVisitors = Number((newRes.rows[0] as any)?.count || 0);
+      const sRow = (sessionsRes.rows[0] as any) || {};
+      const uniqueVisitors = Number(sRow.unique_visitors || 0);
+      const newVisitors = Number(sRow.new_visitors || 0);
+      const returningVisitors = Number(sRow.returning_visitors || 0);
+      const totalSessions = Number(sRow.total_sessions || 0);
+      const bounceSessions = Number(sRow.bounce_sessions || 0);
+      const totalDuration = Number(sRow.total_duration_seconds || 0);
 
-      const returningRes = await db.execute(sql`
-        SELECT COUNT(DISTINCT visitor_id) AS count
-        FROM sessions
-        WHERE site_id = ${siteId}
-          AND is_returning = TRUE
-          AND started_at <= ${tDate}
-          AND last_seen_at >= ${fDate}
-          ${botFilter}
-          ${sessionsFilter}
-      `);
-      const returningVisitors = Number((returningRes.rows[0] as any)?.count || 0);
       const returningVisitorRate =
         uniqueVisitors > 0 ? Number(((returningVisitors / uniqueVisitors) * 100).toFixed(2)) : 0;
 
-      // 2. Session metrics
-      const statsRes = await db.execute(sql`
-        SELECT
-          COUNT(*) AS total_sessions,
-          COALESCE(SUM(page_views), 0) AS total_session_pvs,
-          COALESCE(SUM(CASE WHEN is_bounce THEN 1 ELSE 0 END), 0) AS bounce_sessions,
-          COALESCE(SUM(duration_seconds), 0) AS total_duration_seconds
-        FROM sessions
-        WHERE site_id = ${siteId}
-          AND started_at <= ${tDate}
-          AND last_seen_at >= ${fDate}
-          ${botFilter}
-          ${sessionsFilter}
-      `);
-      const row = (statsRes.rows[0] as any) || {};
-      const totalSessions = Number(row.total_sessions || 0);
-      const bounceSessions = Number(row.bounce_sessions || 0);
-      const totalDuration = Number(row.total_duration_seconds || 0);
-
-      // Compute exact page views from page_views table respecting path/route filters
-      const pvFilter = buildPageViewsFilterSql(filters);
-      const pvRes = await db.execute(sql`
-        SELECT COUNT(*) AS total_page_views
-        FROM page_views
-        WHERE site_id = ${siteId}
-          AND timestamp >= ${fDate}
-          AND timestamp <= ${tDate}
-          ${botFilter}
-          ${pvFilter}
-      `);
       const totalPageViews = Number((pvRes.rows[0] as any)?.total_page_views || 0);
-
       const bounceRate =
         totalSessions > 0 ? Number(((bounceSessions / totalSessions) * 100).toFixed(2)) : 0;
       const averageSessionDuration =
@@ -531,17 +485,23 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
       };
     }
 
-    const currentMetrics = await fetchOverviewMetrics(fromDate, toDate);
-
-    // 3. Live metrics (5-min window)
+    // 3. Concurrently fetch current metrics, live metrics, and comparison metrics
     const threshold = new Date(Date.now() - 5 * 60 * 1000);
-    const liveRes = await db.execute(sql`
+    const livePromise = db.execute(sql`
       SELECT COUNT(DISTINCT visitor_id) AS live_visitors
       FROM sessions
       WHERE site_id = ${siteId}
         AND last_seen_at >= ${threshold}
         AND is_bot = FALSE
     `);
+
+    const compRange = calculateComparisonTimeRange(fromDate, toDate, compare || 'none');
+    const [currentMetrics, liveRes, prev] = await Promise.all([
+      fetchOverviewMetrics(fromDate, toDate),
+      livePromise,
+      compRange ? fetchOverviewMetrics(compRange.from, compRange.to) : Promise.resolve(null),
+    ]);
+
     const liveVisitors = Number((liveRes.rows[0] as any)?.live_visitors || 0);
 
     const metrics = {
@@ -549,13 +509,10 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
       liveVisitors,
     };
 
-    // 4. Comparison metrics if requested
-    const compRange = calculateComparisonTimeRange(fromDate, toDate, compare || 'none');
     let compMetrics = null;
     let changes = null;
 
-    if (compRange) {
-      const prev = await fetchOverviewMetrics(compRange.from, compRange.to);
+    if (compRange && prev) {
       compMetrics = {
         ...prev,
         liveVisitors: 0,

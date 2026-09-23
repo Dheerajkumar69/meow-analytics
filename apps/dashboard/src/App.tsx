@@ -3,18 +3,18 @@ import { Sidebar, NavItemKey } from './layout/Sidebar.js';
 import { TopNav } from './layout/TopNav.js';
 import { EmptyAnalytics } from './components/EmptyAnalytics.js';
 import { OverviewView } from './pages/OverviewView.js';
-import { TrafficView } from './pages/TrafficView.js';
-import { AudienceView } from './pages/AudienceView.js';
-import { ContentView } from './pages/ContentView.js';
-import { RealtimeView } from './pages/RealtimeView.js';
-import { ExploreView } from './pages/ExploreView.js';
-import { FunnelsView } from './pages/FunnelsView.js';
-import { RetentionView } from './pages/RetentionView.js';
-import { ProjectsView } from './pages/ProjectsView.js';
-import { SettingsView } from './pages/SettingsView.js';
-import { EventsView } from './pages/EventsView.js';
-import { ErrorsView } from './pages/ErrorsView.js';
-import { PerformanceView } from './pages/PerformanceView.js';
+const TrafficView = React.lazy(() => import('./pages/TrafficView.js').then((m) => ({ default: m.TrafficView })));
+const AudienceView = React.lazy(() => import('./pages/AudienceView.js').then((m) => ({ default: m.AudienceView })));
+const ContentView = React.lazy(() => import('./pages/ContentView.js').then((m) => ({ default: m.ContentView })));
+const RealtimeView = React.lazy(() => import('./pages/RealtimeView.js').then((m) => ({ default: m.RealtimeView })));
+const ExploreView = React.lazy(() => import('./pages/ExploreView.js').then((m) => ({ default: m.ExploreView })));
+const FunnelsView = React.lazy(() => import('./pages/FunnelsView.js').then((m) => ({ default: m.FunnelsView })));
+const RetentionView = React.lazy(() => import('./pages/RetentionView.js').then((m) => ({ default: m.RetentionView })));
+const ProjectsView = React.lazy(() => import('./pages/ProjectsView.js').then((m) => ({ default: m.ProjectsView })));
+const SettingsView = React.lazy(() => import('./pages/SettingsView.js').then((m) => ({ default: m.SettingsView })));
+const EventsView = React.lazy(() => import('./pages/EventsView.js').then((m) => ({ default: m.EventsView })));
+const ErrorsView = React.lazy(() => import('./pages/ErrorsView.js').then((m) => ({ default: m.ErrorsView })));
+const PerformanceView = React.lazy(() => import('./pages/PerformanceView.js').then((m) => ({ default: m.PerformanceView })));
 import { Modal } from './components/Modal.js';
 import { Project, api } from './lib/api.js';
 import { Shield } from 'lucide-react';
@@ -140,44 +140,46 @@ export const App: React.FC = () => {
         />
 
         <main style={{ flex: 1, padding: 'var(--space-6)', overflowY: 'auto' }}>
-          {activeTab === 'overview' ? (
-            <OverviewView project={selectedProject} />
-          ) : activeTab === 'realtime' ? (
-            <RealtimeView project={selectedProject} />
-          ) : activeTab === 'traffic' || activeTab === 'sources' || activeTab === 'visitors' ? (
-            <TrafficView project={selectedProject} />
-          ) : activeTab === 'audience' || activeTab === 'geography' || activeTab === 'devices' ? (
-            <AudienceView project={selectedProject} />
-          ) : activeTab === 'content' || activeTab === 'pages' ? (
-            <ContentView project={selectedProject} />
-          ) : activeTab === 'events' ? (
-            <EventsView project={selectedProject} />
-          ) : activeTab === 'funnels' ? (
-            <FunnelsView project={selectedProject} />
-          ) : activeTab === 'retention' ? (
-            <RetentionView project={selectedProject} />
-          ) : activeTab === 'performance' ? (
-            <PerformanceView project={selectedProject} />
-          ) : activeTab === 'errors' ? (
-            <ErrorsView project={selectedProject} />
-          ) : activeTab === 'explore' ? (
-            <ExploreView project={selectedProject} />
-          ) : activeTab === 'projects' ? (
-            <ProjectsView
-              projects={projects}
-              selectedProject={selectedProject}
-              onRefreshProjects={loadProjects}
-              onSelectProject={setSelectedProject}
-            />
-          ) : activeTab === 'settings' ? (
-            <SettingsView
-              theme={theme}
-              onToggleTheme={handleToggleTheme}
-              apiStatus={apiStatus}
-            />
-          ) : (
-            <OverviewView project={selectedProject} />
-          )}
+          <React.Suspense fallback={<div className="skeleton-card" style={{ height: 320, margin: 'var(--space-4) 0' }} />}>
+            {activeTab === 'overview' ? (
+              <OverviewView project={selectedProject} />
+            ) : activeTab === 'realtime' ? (
+              <RealtimeView project={selectedProject} />
+            ) : activeTab === 'traffic' || activeTab === 'sources' || activeTab === 'visitors' ? (
+              <TrafficView project={selectedProject} />
+            ) : activeTab === 'audience' || activeTab === 'geography' || activeTab === 'devices' ? (
+              <AudienceView project={selectedProject} />
+            ) : activeTab === 'content' || activeTab === 'pages' ? (
+              <ContentView project={selectedProject} />
+            ) : activeTab === 'events' ? (
+              <EventsView project={selectedProject} />
+            ) : activeTab === 'funnels' ? (
+              <FunnelsView project={selectedProject} />
+            ) : activeTab === 'retention' ? (
+              <RetentionView project={selectedProject} />
+            ) : activeTab === 'performance' ? (
+              <PerformanceView project={selectedProject} />
+            ) : activeTab === 'errors' ? (
+              <ErrorsView project={selectedProject} />
+            ) : activeTab === 'explore' ? (
+              <ExploreView project={selectedProject} />
+            ) : activeTab === 'projects' ? (
+              <ProjectsView
+                projects={projects}
+                selectedProject={selectedProject}
+                onRefreshProjects={loadProjects}
+                onSelectProject={setSelectedProject}
+              />
+            ) : activeTab === 'settings' ? (
+              <SettingsView
+                theme={theme}
+                onToggleTheme={handleToggleTheme}
+                apiStatus={apiStatus}
+              />
+            ) : (
+              <OverviewView project={selectedProject} />
+            )}
+          </React.Suspense>
         </main>
       </div>
 

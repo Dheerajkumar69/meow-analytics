@@ -59,7 +59,8 @@ class AnalyticsCache {
 
   public invalidateSite(siteId: string): void {
     for (const key of this.cache.keys()) {
-      if (key.includes(`|${siteId}|`) || key.includes(`|${siteId}`) || key.startsWith(`${siteId}:`)) {
+      const parts = key.split('|');
+      if (parts[1] === siteId || key.startsWith(`${siteId}:`)) {
         this.cache.delete(key);
       }
     }
@@ -127,3 +128,52 @@ export function buildAnalyticsCacheKey(endpoint: string, siteId: string, params:
 
   return parts.join('|');
 }
+
+export interface CachedProjectValidation {
+  project: any;
+  allowedDomains: string[];
+}
+
+class ProjectValidationCache {
+  private cache = new Map<string, { data: CachedProjectValidation; expiresAt: number }>();
+  private ttlMs: number;
+
+  constructor(ttlMs = 30 * 1000) {
+    this.ttlMs = ttlMs;
+  }
+
+  public get(siteId: string): CachedProjectValidation | null {
+    const entry = this.cache.get(siteId);
+    if (!entry) return null;
+    if (Date.now() > entry.expiresAt) {
+      this.cache.delete(siteId);
+      return null;
+    }
+    return entry.data;
+  }
+
+  public set(siteId: string, data: CachedProjectValidation): void {
+    this.cache.set(siteId, {
+      data,
+      expiresAt: Date.now() + this.ttlMs,
+    });
+  }
+
+  public invalidate(identifier?: string): void {
+    if (!identifier) {
+      this.cache.clear();
+      return;
+    }
+    for (const [key, entry] of this.cache.entries()) {
+      if (key === identifier || entry.data.project.id === identifier || entry.data.project.site_id === identifier) {
+        this.cache.delete(key);
+      }
+    }
+  }
+
+  public clear(): void {
+    this.cache.clear();
+  }
+}
+
+export const projectValidationCache = new ProjectValidationCache();

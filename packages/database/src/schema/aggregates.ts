@@ -22,6 +22,7 @@ export const hourlyAggregates = pgTable(
     siteBucketIdx: uniqueIndex('hourly_aggregates_site_bucket_idx').on(table.site_id, table.bucket_time),
     siteIdIdx: index('hourly_aggregates_site_id_idx').on(table.site_id),
     bucketTimeIdx: index('hourly_aggregates_bucket_time_idx').on(table.bucket_time),
+    siteBucketAscIdx: index('hourly_aggregates_site_bucket_asc_idx').on(table.site_id, table.bucket_time),
   })
 );
 
@@ -46,6 +47,7 @@ export const dailyAggregates = pgTable(
     siteBucketDateIdx: uniqueIndex('daily_aggregates_site_bucket_idx').on(table.site_id, table.bucket_date),
     siteIdIdx: index('daily_aggregates_site_id_idx').on(table.site_id),
     bucketDateIdx: index('daily_aggregates_bucket_date_idx').on(table.bucket_date),
+    siteBucketAscDateIdx: index('daily_aggregates_site_bucket_asc_idx').on(table.site_id, table.bucket_date),
   })
 );
 

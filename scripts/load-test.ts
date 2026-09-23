@@ -63,11 +63,12 @@ export async function runLoadTest(options: {
   const db = getDatabase();
 
   const siteId = `site_load_${Date.now()}`;
+  const projId = `proj_load_${Date.now()}`;
 
   // Seed project
   await db.execute(sql`
     INSERT INTO projects (id, name, site_id, status)
-    VALUES ('proj_load', 'Load Test Project', ${siteId}, 'active')
+    VALUES (${projId}, 'Load Test Project', ${siteId}, 'active')
     ON CONFLICT (site_id) DO NOTHING
   `);
 

@@ -6,21 +6,22 @@ import { WidgetError } from './WidgetError.js';
 
 interface TrafficChartProps {
   data: TimeseriesResponse | null;
-  metric: 'visitors' | 'sessions' | 'views';
-  onChangeMetric: (m: 'visitors' | 'sessions' | 'views') => void;
-  resolution: 'auto' | 'hourly' | 'daily' | 'weekly' | 'monthly';
-  onChangeResolution: (r: 'auto' | 'hourly' | 'daily' | 'weekly' | 'monthly') => void;
+  metric?: 'visitors' | 'sessions' | 'views';
+  onChangeMetric?: (m: 'visitors' | 'sessions' | 'views') => void;
+  resolution?: 'auto' | 'hourly' | 'daily' | 'weekly' | 'monthly';
+  onChangeResolution?: (r: 'auto' | 'hourly' | 'daily' | 'weekly' | 'monthly') => void;
   loading?: boolean;
   error?: string | null;
   onRetry?: () => void;
   comparisonLabel?: string;
+  comparison?: any;
 }
 
 export const TrafficChart: React.FC<TrafficChartProps> = ({
   data,
-  metric,
+  metric = 'visitors',
   onChangeMetric,
-  resolution,
+  resolution = 'auto',
   onChangeResolution,
   loading,
   error,
@@ -154,7 +155,7 @@ export const TrafficChart: React.FC<TrafficChartProps> = ({
                 <button
                   key={m.id}
                   type="button"
-                  onClick={() => onChangeMetric(m.id as any)}
+                  onClick={() => onChangeMetric?.(m.id as any)}
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
@@ -208,7 +209,7 @@ export const TrafficChart: React.FC<TrafficChartProps> = ({
               <button
                 key={r}
                 type="button"
-                onClick={() => onChangeResolution(r)}
+                onClick={() => onChangeResolution?.(r)}
                 style={{
                   padding: '3px 8px',
                   borderRadius: 'var(--radius-sm)',

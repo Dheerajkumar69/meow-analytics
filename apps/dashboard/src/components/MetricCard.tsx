@@ -6,13 +6,16 @@ import { WidgetError } from './WidgetError.js';
 interface MetricCardProps {
   title: string;
   value: string | number;
-  icon: LucideIcon;
+  icon: LucideIcon | React.ComponentType<{ size?: number; color?: string }> | React.ReactNode;
   iconColor?: string;
   change?: number | null; // percentage change, e.g. +12.4 or -5.2
+  changePercent?: number | null;
+  comparisonValue?: string;
   invertChangeColor?: boolean; // e.g. for Bounce Rate, lower is good!
   comparisonLabel?: string;
   subtext?: string;
   infoTooltip?: string;
+  tooltip?: string;
   loading?: boolean;
   error?: string | null;
   onRetry?: () => void;
@@ -21,17 +24,34 @@ interface MetricCardProps {
 export const MetricCard: React.FC<MetricCardProps> = ({
   title,
   value,
-  icon: Icon,
+  icon,
   iconColor = 'var(--color-accent)',
   change,
+  changePercent,
+  comparisonValue,
   invertChangeColor = false,
   comparisonLabel = 'vs prev. period',
   subtext,
   infoTooltip,
+  tooltip,
   loading,
   error,
   onRetry,
 }) => {
+  const effectiveChange = change !== undefined ? change : changePercent;
+  const effectiveTooltip = infoTooltip || tooltip;
+
+  const renderIcon = () => {
+    if (React.isValidElement(icon)) {
+      return icon;
+    }
+    if (typeof icon === 'function' || (typeof icon === 'object' && icon !== null)) {
+      const IconComponent = icon as React.ComponentType<{ size?: number; color?: string }>;
+      return <IconComponent size={16} color={iconColor} />;
+    }
+    return null;
+  };
+
   if (loading) {
     return <CardSkeleton />;
   }
@@ -43,7 +63,7 @@ export const MetricCard: React.FC<MetricCardProps> = ({
           <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>
             {title}
           </span>
-          <Icon size={16} color={iconColor} />
+          {renderIcon()}
         </div>
         <WidgetError message={error} onRetry={onRetry} height="80px" />
       </div>
@@ -55,11 +75,11 @@ export const MetricCard: React.FC<MetricCardProps> = ({
   let isNegative = false;
   let isZero = true;
 
-  if (change !== undefined && change !== null) {
-    if (change > 0) {
+  if (effectiveChange !== undefined && effectiveChange !== null) {
+    if (effectiveChange > 0) {
       isPositive = true;
       isZero = false;
-    } else if (change < 0) {
+    } else if (effectiveChange < 0) {
       isNegative = true;
       isZero = false;
     }
@@ -108,7 +128,7 @@ export const MetricCard: React.FC<MetricCardProps> = ({
               justifyContent: 'center',
             }}
           >
-            <Icon size={16} color={iconColor} />
+            {renderIcon()}
           </div>
         </div>
 
@@ -127,7 +147,7 @@ export const MetricCard: React.FC<MetricCardProps> = ({
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '4px' }}>
-        {change !== undefined && change !== null ? (
+        {effectiveChange !== undefined && effectiveChange !== null ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span
               style={{
@@ -149,10 +169,10 @@ export const MetricCard: React.FC<MetricCardProps> = ({
               ) : (
                 <Minus size={12} />
               )}
-              {isPositive ? `+${change}%` : `${change}%`}
+              {isPositive ? `+${effectiveChange}%` : `${effectiveChange}%`}
             </span>
             <span style={{ fontSize: '0.6875rem', color: 'var(--color-text-muted)' }}>
-              {comparisonLabel}
+              {comparisonValue ? `vs ${comparisonValue}` : comparisonLabel}
             </span>
           </div>
         ) : subtext ? (
@@ -161,9 +181,9 @@ export const MetricCard: React.FC<MetricCardProps> = ({
           </span>
         ) : null}
 
-        {infoTooltip && (
+        {effectiveTooltip && (
           <span
-            title={infoTooltip}
+            title={effectiveTooltip}
             style={{
               display: 'inline-flex',
               alignItems: 'center',

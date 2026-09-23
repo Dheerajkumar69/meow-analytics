@@ -4,7 +4,7 @@ import { getConfig } from '@meow-analytics/config';
 import { getDatabase, apiKeys, projects } from '@meow-analytics/database';
 import { hashApiKey } from '@meow-analytics/shared';
 import { eq, sql } from 'drizzle-orm';
-import { UnauthorizedError, ForbiddenError } from './error-handler.js';
+import { UnauthorizedError, ForbiddenError, NotFoundError } from './error-handler.js';
 
 /**
  * Constant-time string comparison to prevent timing attacks.
@@ -109,7 +109,11 @@ export async function requireProjectAuth(request: FastifyRequest, reply: Fastify
         .where(sql`${projects.id} = ${targetIdentifier} OR ${projects.site_id} = ${targetIdentifier}`)
         .limit(1);
 
-      if (projRows.length > 0 && projRows[0]!.id !== keyRow.project_id) {
+      if (projRows.length === 0) {
+        throw new NotFoundError(`Project "${targetIdentifier}" not found`);
+      }
+
+      if (projRows[0]!.id !== keyRow.project_id) {
         throw new ForbiddenError(`API key is not authorized for project "${targetIdentifier}"`);
       }
     }

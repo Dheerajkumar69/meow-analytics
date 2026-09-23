@@ -497,7 +497,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({ project }) => {
             {pagesData.length > 0 && (
               <div style={{ padding: 'var(--space-3)', backgroundColor: 'var(--color-surface-base)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', fontSize: '0.8125rem' }}>
                 <span style={{ fontWeight: 600 }}>Top Content: </span>
-                Route <code>{pagesData[0].path}</code> leads with {pagesData[0].pageViews?.toLocaleString()} views ({Math.round(((pagesData[0].pageViews || 0) / Math.max(metrics.pageViews || 1, 1)) * 100)}% of total volume).
+                Route <code>{pagesData[0]?.path}</code> leads with {pagesData[0]?.pageViews?.toLocaleString()} views ({Math.round(((pagesData[0]?.pageViews || 0) / Math.max(metrics.pageViews || 1, 1)) * 100)}% of total volume).
               </div>
             )}
           </div>

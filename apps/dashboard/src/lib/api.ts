@@ -448,36 +448,58 @@ class ApiClient {
     localStorage.setItem('meow_admin_secret', secret);
   }
 
-  private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      ...(options.headers as Record<string, string>),
-    };
+  private inFlight = new Map<string, Promise<any>>();
 
-    if (this.secret) {
-      headers['Authorization'] = `Bearer ${this.secret}`;
-    }
+  private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
+    const method = (options.method || 'GET').toUpperCase();
+    const isGet = method === 'GET';
 
     const baseUrl = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
     const url = path.startsWith('http') ? path : `${baseUrl}${path}`;
 
-    const res = await fetch(url, {
-      ...options,
-      headers,
-    });
-
-    const data = await res.json().catch(() => null);
-
-    if (!res.ok) {
-      const errMessage = data?.error?.message || `HTTP ${res.status}: ${res.statusText}`;
-      const errCode = data?.error?.code || 'UNKNOWN_ERROR';
-      const error: any = new Error(errMessage);
-      error.code = errCode;
-      throw error;
+    // Deduplicate identical concurrent in-flight GET requests
+    const cacheKey = isGet ? `${this.secret || ''}:${url}` : null;
+    if (cacheKey && this.inFlight.has(cacheKey)) {
+      return this.inFlight.get(cacheKey) as Promise<T>;
     }
 
-    return data as T;
+    const promise = (async () => {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        ...(options.headers as Record<string, string>),
+      };
+
+      if (this.secret) {
+        headers['Authorization'] = `Bearer ${this.secret}`;
+      }
+
+      const res = await fetch(url, {
+        ...options,
+        headers,
+      });
+
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        const errMessage = data?.error?.message || `HTTP ${res.status}: ${res.statusText}`;
+        const errCode = data?.error?.code || 'UNKNOWN_ERROR';
+        const error: any = new Error(errMessage);
+        error.code = errCode;
+        throw error;
+      }
+
+      return data as T;
+    })();
+
+    if (cacheKey) {
+      this.inFlight.set(cacheKey, promise);
+      promise.finally(() => {
+        this.inFlight.delete(cacheKey);
+      });
+    }
+
+    return promise;
   }
 
   // Health

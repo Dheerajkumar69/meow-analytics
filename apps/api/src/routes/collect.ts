@@ -23,7 +23,7 @@ import {
 } from '@meow-analytics/shared';
 import { getConfig } from '@meow-analytics/config';
 import { requireAdminAuth } from '../plugins/auth.js';
-import { analyticsCache } from '../lib/cache.js';
+import { analyticsCache, projectValidationCache } from '../lib/cache.js';
 import { eq, desc, sql } from 'drizzle-orm';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -49,20 +49,45 @@ function matchesDomain(host: string, allowedDomain: string): boolean {
 
 const SESSION_INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
+let cachedSdkJs: { content: string; etag: string; mtime: number } | null = null;
+
 export const collectRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
   const db = getDatabase();
 
-  // --- Serve Browser SDK Script ---
-  fastify.get('/meow.js', async (_request, reply) => {
+  // --- Serve Browser SDK Script with In-Memory Caching and 304 Support ---
+  fastify.get('/meow.js', async (request, reply) => {
     const sdkPath = path.resolve(__dirname, '../../../../packages/sdk/dist/meow.js');
-    if (fs.existsSync(sdkPath)) {
-      const content = fs.readFileSync(sdkPath, 'utf8');
+    if (!fs.existsSync(sdkPath)) {
+      return reply.status(404).send('// Meow Analytics SDK not built. Run npm run build.');
+    }
+
+    try {
+      const stat = fs.statSync(sdkPath);
+      if (!cachedSdkJs || cachedSdkJs.mtime !== stat.mtimeMs) {
+        const content = fs.readFileSync(sdkPath, 'utf8');
+        cachedSdkJs = {
+          content,
+          etag: `W/"${stat.size}-${stat.mtimeMs}"`,
+          mtime: stat.mtimeMs,
+        };
+      }
+
+      const clientEtag = request.headers['if-none-match'];
+      if (clientEtag && clientEtag === cachedSdkJs.etag) {
+        reply.header('ETag', cachedSdkJs.etag);
+        reply.header('Cache-Control', 'public, max-age=3600');
+        reply.header('Access-Control-Allow-Origin', '*');
+        return reply.status(304).send();
+      }
+
       reply.header('Content-Type', 'application/javascript; charset=utf-8');
       reply.header('Cache-Control', 'public, max-age=3600');
+      reply.header('ETag', cachedSdkJs.etag);
       reply.header('Access-Control-Allow-Origin', '*');
-      return reply.send(content);
+      return reply.send(cachedSdkJs.content);
+    } catch {
+      return reply.status(500).send('// Error serving SDK');
     }
-    return reply.status(404).send('// Meow Analytics SDK not built. Run npm run build.');
   });
 
   // --- Public Collector Endpoint ---
@@ -83,14 +108,42 @@ export const collectRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
 
     const { siteId, events: incomingEvents } = parseResult.data;
 
-    // 2. Validate site ID exists and project is active
-    const projectRows = await db
-      .select()
-      .from(projects)
-      .where(eq(projects.site_id, siteId))
-      .limit(1);
+    // 2. Validate site ID exists and project is active (with fast in-memory validation cache)
+    let project: any;
+    let configuredDomains: { domain: string }[];
 
-    const project = projectRows[0];
+    const cachedProjectVal = projectValidationCache.get(siteId);
+    if (cachedProjectVal) {
+      project = cachedProjectVal.project;
+      configuredDomains = cachedProjectVal.allowedDomains.map((d) => ({ domain: d }));
+    } else {
+      const projectRows = await db
+        .select()
+        .from(projects)
+        .where(eq(projects.site_id, siteId))
+        .limit(1);
+
+      project = projectRows[0];
+      if (!project || project.status !== 'active') {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_SITE_ID',
+            message: `Site ID "${siteId}" does not exist or is not active`,
+          },
+        });
+      }
+
+      configuredDomains = await db
+        .select({ domain: projectDomains.domain })
+        .from(projectDomains)
+        .where(eq(projectDomains.project_id, project.id));
+
+      projectValidationCache.set(siteId, {
+        project,
+        allowedDomains: configuredDomains.map((d) => d.domain),
+      });
+    }
+
     if (!project || project.status !== 'active') {
       return reply.status(400).send({
         error: {
@@ -100,11 +153,20 @@ export const collectRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
       });
     }
 
-    // 3. Domain Validation (if configured for project)
-    const configuredDomains = await db
-      .select({ domain: projectDomains.domain })
-      .from(projectDomains)
-      .where(eq(projectDomains.project_id, project.id));
+    // 3. Hostname Normalization & Domain Validation
+    for (const ev of incomingEvents) {
+      try {
+        ev.hostname = normalizeDomain(ev.hostname);
+      } catch {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_HOSTNAME',
+            message: `Invalid hostname format in event: "${ev.hostname}"`,
+          },
+        });
+      }
+    }
+
 
     if (configuredDomains.length > 0) {
       const allowedList = configuredDomains.map((d) => d.domain.toLowerCase());
@@ -122,23 +184,11 @@ export const collectRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
       }
 
       for (const ev of incomingEvents) {
-        let evHost: string;
-        try {
-          evHost = normalizeDomain(ev.hostname);
-        } catch {
-          return reply.status(400).send({
-            error: {
-              code: 'INVALID_HOSTNAME',
-              message: `Invalid hostname format in event: "${ev.hostname}"`,
-            },
-          });
-        }
-
-        if (!allowedList.some((allowed) => matchesDomain(evHost, allowed))) {
+        if (!allowedList.some((allowed) => matchesDomain(ev.hostname, allowed))) {
           return reply.status(403).send({
             error: {
               code: 'DOMAIN_NOT_ALLOWED',
-              message: `Hostname "${evHost}" is not authorized for project "${siteId}"`,
+              message: `Hostname "${ev.hostname}" is not authorized for project "${siteId}"`,
             },
           });
         }
@@ -171,6 +221,10 @@ export const collectRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
       let txIngested = 0;
       let txDuplicates = 0;
 
+      // In-batch resolution cache to avoid redundant roundtrips across events in the same batch
+      const batchVisitors = new Map<string, { visitorDbId: string; firstSeenAt: Date }>();
+      const batchSessions = new Map<string, { sessionId: string; isReturning: boolean }>();
+
       for (const ev of incomingEvents) {
         const evTimestamp = new Date(ev.timestamp);
 
@@ -202,32 +256,6 @@ export const collectRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
         const sanitizedProps = sanitizeEventProperties(ev.properties || {});
         const propertiesJson = JSON.stringify(sanitizedProps.properties);
 
-        // Atomic Deduplication Check: Try inserting into events table with ON CONFLICT DO NOTHING
-        const initialInsert = await tx.execute(sql`
-          INSERT INTO events (
-            event_id, site_id, type, event_name, properties, path, hostname, referrer,
-            referrer_source, referrer_hostname, referrer_url,
-            utm_source, utm_medium, utm_campaign, utm_term, utm_content,
-            country_code, country_name, region,
-            device_type, browser, os, language, screen_resolution, is_bot,
-            user_agent, origin, timestamp, created_at
-          ) VALUES (
-            ${ev.eventId}, ${project.site_id}, ${ev.type}, ${eventName}, ${propertiesJson}, ${ev.path}, ${ev.hostname}, ${ev.referrer || ''},
-            ${referrerSource}, ${referrerHostname}, ${referrerUrl},
-            ${utmSource}, ${utmMedium}, ${utmCampaign}, ${utmTerm}, ${utmContent},
-            ${countryCode}, ${countryName}, ${region},
-            ${deviceType}, ${browser}, ${os}, ${language}, ${screenResolution}, ${isBot},
-            ${userAgent}, ${originHeader}, ${evTimestamp}, NOW()
-          )
-          ON CONFLICT (event_id) DO NOTHING
-          RETURNING event_id
-        `);
-
-        if (!initialInsert.rows || initialInsert.rows.length === 0) {
-          txDuplicates++;
-          continue;
-        }
-
         // --- 5A. Resolve Visitor Identity ---
         // In Strict mode: client cookies/storage are ignored, 24h rotating hash is enforced
         const rotationHours = (project as any).visitor_retention_hours || 24;
@@ -252,74 +280,124 @@ export const collectRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
           });
         }
 
-        // Atomic Visitor Upsert: Race-condition safe
-        const newVisId = generateVisitorInternalId();
-        const visitorResult = await tx.execute(sql`
-          INSERT INTO visitors (
-            id, site_id, anonymous_id, first_seen_at, last_seen_at,
-            first_path, last_path, first_referrer, last_referrer, created_at
-          ) VALUES (
-            ${newVisId}, ${project.site_id}, ${anonymousId}, ${evTimestamp}, ${evTimestamp},
-            ${ev.path}, ${ev.path}, ${ev.referrer || ''}, ${ev.referrer || ''}, NOW()
-          )
-          ON CONFLICT (site_id, anonymous_id) DO UPDATE SET
-            last_seen_at = GREATEST(visitors.last_seen_at, EXCLUDED.last_seen_at),
-            last_path = EXCLUDED.last_path,
-            last_referrer = CASE WHEN EXCLUDED.last_referrer <> '' THEN EXCLUDED.last_referrer ELSE visitors.last_referrer END
-          RETURNING id, first_seen_at, last_seen_at
-        `);
+        let visitorDbId: string;
+        const cachedVis = batchVisitors.get(anonymousId);
+        if (cachedVis) {
+          visitorDbId = cachedVis.visitorDbId;
+        } else {
+          // Atomic Visitor Upsert: Race-condition safe
+          const newVisId = generateVisitorInternalId();
+          const visitorResult = await tx.execute(sql`
+            INSERT INTO visitors (
+              id, site_id, anonymous_id, first_seen_at, last_seen_at,
+              first_path, last_path, first_referrer, last_referrer, created_at
+            ) VALUES (
+              ${newVisId}, ${project.site_id}, ${anonymousId}, ${evTimestamp}, ${evTimestamp},
+              ${ev.path}, ${ev.path}, ${ev.referrer || ''}, ${ev.referrer || ''}, NOW()
+            )
+            ON CONFLICT (site_id, anonymous_id) DO UPDATE SET
+              last_seen_at = GREATEST(visitors.last_seen_at, EXCLUDED.last_seen_at),
+              last_path = EXCLUDED.last_path,
+              last_referrer = CASE WHEN EXCLUDED.last_referrer <> '' THEN EXCLUDED.last_referrer ELSE visitors.last_referrer END
+            RETURNING id, first_seen_at, last_seen_at
+          `);
 
-        const visitorRow = visitorResult.rows[0] as any;
-        const visitorDbId = visitorRow.id;
+          const visitorRow = visitorResult.rows[0] as any;
+          visitorDbId = visitorRow.id;
+          batchVisitors.set(anonymousId, { visitorDbId, firstSeenAt: new Date(visitorRow.first_seen_at) });
+        }
 
         // --- 5B. Resolve Session & 30-Minute Inactivity Window ---
         let targetSessionId = ev.sessionId?.trim();
+        let isReturning = false;
 
-        if (!targetSessionId) {
-          const activeSessions = await tx.execute(sql`
-            SELECT session_id, last_seen_at
-            FROM sessions
-            WHERE site_id = ${project.site_id} AND visitor_id = ${visitorDbId}
-            ORDER BY last_seen_at DESC
-            LIMIT 1
-          `);
+        const sessionCacheKey = targetSessionId ? `${visitorDbId}:${targetSessionId}` : '';
+        const cachedSess = sessionCacheKey ? batchSessions.get(sessionCacheKey) : null;
 
-          if (activeSessions.rows.length > 0) {
-            const lastActive = new Date((activeSessions.rows[0] as any).last_seen_at).getTime();
-            if (evTimestamp.getTime() - lastActive <= SESSION_INACTIVITY_TIMEOUT_MS) {
-              targetSessionId = (activeSessions.rows[0] as any).session_id;
-            }
-          }
-
-          if (!targetSessionId) {
-            targetSessionId = generateSessionId();
-          }
+        if (cachedSess) {
+          targetSessionId = cachedSess.sessionId;
+          isReturning = cachedSess.isReturning;
         } else {
-          const existingSession = await tx.execute(sql`
-            SELECT session_id, last_seen_at
+          if (!targetSessionId) {
+            const activeSessions = await tx.execute(sql`
+              SELECT session_id, last_seen_at
+              FROM sessions
+              WHERE site_id = ${project.site_id} AND visitor_id = ${visitorDbId}
+              ORDER BY last_seen_at DESC
+              LIMIT 1
+            `);
+
+            if (activeSessions.rows.length > 0) {
+              const lastActive = new Date((activeSessions.rows[0] as any).last_seen_at).getTime();
+              if (evTimestamp.getTime() - lastActive <= SESSION_INACTIVITY_TIMEOUT_MS) {
+                targetSessionId = (activeSessions.rows[0] as any).session_id;
+              }
+            }
+
+            if (!targetSessionId) {
+              targetSessionId = generateSessionId();
+            }
+          } else {
+            const existingSession = await tx.execute(sql`
+              SELECT session_id, last_seen_at
+              FROM sessions
+              WHERE site_id = ${project.site_id} AND session_id = ${targetSessionId}
+              LIMIT 1
+            `);
+
+            if (existingSession.rows.length > 0) {
+              const lastActive = new Date((existingSession.rows[0] as any).last_seen_at).getTime();
+              if (evTimestamp.getTime() - lastActive > SESSION_INACTIVITY_TIMEOUT_MS) {
+                targetSessionId = `${targetSessionId}_${Math.floor(evTimestamp.getTime() / 1000)}`;
+              }
+            }
+          }
+
+          const priorSessions = await tx.execute(sql`
+            SELECT 1
             FROM sessions
-            WHERE site_id = ${project.site_id} AND session_id = ${targetSessionId}
+            WHERE site_id = ${project.site_id}
+              AND visitor_id = ${visitorDbId}
+              AND session_id <> ${targetSessionId}
             LIMIT 1
           `);
+          isReturning = priorSessions.rows.length > 0;
 
-          if (existingSession.rows.length > 0) {
-            const lastActive = new Date((existingSession.rows[0] as any).last_seen_at).getTime();
-            if (evTimestamp.getTime() - lastActive > SESSION_INACTIVITY_TIMEOUT_MS) {
-              targetSessionId = `${targetSessionId}_${Math.floor(evTimestamp.getTime() / 1000)}`;
-            }
+          if (sessionCacheKey) {
+            batchSessions.set(sessionCacheKey, {
+              sessionId: targetSessionId,
+              isReturning,
+            });
           }
         }
 
-        const priorSessions = await tx.execute(sql`
-          SELECT 1
-          FROM sessions
-          WHERE site_id = ${project.site_id}
-            AND visitor_id = ${visitorDbId}
-            AND session_id <> ${targetSessionId}
-          LIMIT 1
+        // --- 5C. Deduplication Insert into events with visitor_id & session_id ALREADY POPULATED ---
+        const initialInsert = await tx.execute(sql`
+          INSERT INTO events (
+            event_id, site_id, type, event_name, properties, path, hostname, referrer,
+            referrer_source, referrer_hostname, referrer_url,
+            utm_source, utm_medium, utm_campaign, utm_term, utm_content,
+            country_code, country_name, region,
+            device_type, browser, os, language, screen_resolution, is_bot,
+            user_agent, origin, visitor_id, session_id, timestamp, created_at
+          ) VALUES (
+            ${ev.eventId}, ${project.site_id}, ${ev.type}, ${eventName}, ${propertiesJson}, ${ev.path}, ${ev.hostname}, ${ev.referrer || ''},
+            ${referrerSource}, ${referrerHostname}, ${referrerUrl},
+            ${utmSource}, ${utmMedium}, ${utmCampaign}, ${utmTerm}, ${utmContent},
+            ${countryCode}, ${countryName}, ${region},
+            ${deviceType}, ${browser}, ${os}, ${language}, ${screenResolution}, ${isBot},
+            ${userAgent}, ${originHeader}, ${visitorDbId}, ${targetSessionId}, ${evTimestamp}, NOW()
+          )
+          ON CONFLICT (event_id) DO NOTHING
+          RETURNING event_id
         `);
-        const isReturning = priorSessions.rows.length > 0;
 
+        if (!initialInsert.rows || initialInsert.rows.length === 0) {
+          txDuplicates++;
+          continue;
+        }
+
+        // --- 5D. Upsert Session & Specific Event Tables (Only for non-duplicate events) ---
         const isPageView = ev.type === 'page_view';
         const pvIncrement = isPageView ? 1 : 0;
         const newSesId = generateSessionInternalId();
@@ -347,13 +425,6 @@ export const collectRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
             event_count = sessions.event_count + EXCLUDED.event_count,
             is_bounce = (sessions.page_views + EXCLUDED.page_views) <= 1,
             duration_seconds = GREATEST(0, CAST(EXTRACT(EPOCH FROM (GREATEST(sessions.last_seen_at, EXCLUDED.last_seen_at) - sessions.started_at)) AS INTEGER))
-        `);
-
-        // Update events row with visitor_id and session_id
-        await tx.execute(sql`
-          UPDATE events
-          SET visitor_id = ${visitorDbId}, session_id = ${targetSessionId}
-          WHERE event_id = ${ev.eventId}
         `);
 
         // If page_view, insert into page_views table
@@ -481,14 +552,32 @@ export const collectRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
 
     const { siteId, metrics } = parseResult.data;
 
-    // Validate site ID exists and project is active
-    const projectRows = await db
-      .select()
-      .from(projects)
-      .where(eq(projects.site_id, siteId))
-      .limit(1);
+    // Validate site ID exists and project is active (with cache)
+    let project: any;
+    const cachedProjectVal = projectValidationCache.get(siteId);
+    if (cachedProjectVal) {
+      project = cachedProjectVal.project;
+    } else {
+      const projectRows = await db
+        .select()
+        .from(projects)
+        .where(eq(projects.site_id, siteId))
+        .limit(1);
 
-    const project = projectRows[0];
+      project = projectRows[0];
+      if (project && project.status === 'active') {
+        const configuredDomains = await db
+          .select({ domain: projectDomains.domain })
+          .from(projectDomains)
+          .where(eq(projectDomains.project_id, project.id));
+
+        projectValidationCache.set(siteId, {
+          project,
+          allowedDomains: configuredDomains.map((d) => d.domain),
+        });
+      }
+    }
+
     if (!project || project.status !== 'active') {
       return reply.status(400).send({
         error: {
@@ -598,11 +687,17 @@ export const collectRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
         });
       }
 
+      const query = request.query as any;
+      const limit = Math.max(1, Math.min(parseInt(query?.limit, 10) || 100, 1000));
+      const offset = Math.max(0, parseInt(query?.offset, 10) || 0);
+
       const rows = await db
         .select()
         .from(pageViews)
         .where(eq(pageViews.site_id, project.site_id))
-        .orderBy(desc(pageViews.timestamp));
+        .orderBy(desc(pageViews.timestamp))
+        .limit(limit)
+        .offset(offset);
 
       return reply.send(rows);
     }
@@ -630,11 +725,17 @@ export const collectRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
         });
       }
 
+      const query = request.query as any;
+      const limit = Math.max(1, Math.min(parseInt(query?.limit, 10) || 100, 1000));
+      const offset = Math.max(0, parseInt(query?.offset, 10) || 0);
+
       const rows = await db
         .select()
         .from(events)
         .where(eq(events.site_id, project.site_id))
-        .orderBy(desc(events.timestamp));
+        .orderBy(desc(events.timestamp))
+        .limit(limit)
+        .offset(offset);
 
       return reply.send(rows);
     }
@@ -662,11 +763,17 @@ export const collectRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
         });
       }
 
+      const query = request.query as any;
+      const limit = Math.max(1, Math.min(parseInt(query?.limit, 10) || 100, 1000));
+      const offset = Math.max(0, parseInt(query?.offset, 10) || 0);
+
       const rows = await db
         .select()
         .from(visitors)
         .where(eq(visitors.site_id, project.site_id))
-        .orderBy(desc(visitors.last_seen_at));
+        .orderBy(desc(visitors.last_seen_at))
+        .limit(limit)
+        .offset(offset);
 
       return reply.send(rows);
     }
@@ -694,11 +801,17 @@ export const collectRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
         });
       }
 
+      const query = request.query as any;
+      const limit = Math.max(1, Math.min(parseInt(query?.limit, 10) || 100, 1000));
+      const offset = Math.max(0, parseInt(query?.offset, 10) || 0);
+
       const rows = await db
         .select()
         .from(sessions)
         .where(eq(sessions.site_id, project.site_id))
-        .orderBy(desc(sessions.last_seen_at));
+        .orderBy(desc(sessions.last_seen_at))
+        .limit(limit)
+        .offset(offset);
 
       return reply.send(rows);
     }

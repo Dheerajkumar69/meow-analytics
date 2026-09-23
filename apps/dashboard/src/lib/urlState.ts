@@ -161,39 +161,48 @@ export function parseDashboardUrlState(): DashboardUrlState {
 /**
  * Serializes state and updates URL without refreshing
  */
-export function updateDashboardUrlState(state: DashboardUrlState): void {
+export function updateDashboardUrlState(state: Partial<DashboardUrlState>): void {
+  if (typeof window === 'undefined') return;
   const url = new URL(window.location.href);
 
-  if (state.range === '30d') {
-    url.searchParams.delete('range');
-  } else {
-    url.searchParams.set('range', state.range);
+  if (state.range !== undefined) {
+    if (state.range === '30d') {
+      url.searchParams.delete('range');
+    } else {
+      url.searchParams.set('range', state.range);
+    }
   }
 
   if (state.range === 'custom' && state.from && state.to) {
     url.searchParams.set('from', state.from);
     url.searchParams.set('to', state.to);
-  } else {
+  } else if (state.range !== undefined) {
     url.searchParams.delete('from');
     url.searchParams.delete('to');
   }
 
-  if (state.compare === 'previous_period') {
-    url.searchParams.delete('compare');
-  } else {
-    url.searchParams.set('compare', state.compare);
+  if (state.compare !== undefined) {
+    if (state.compare === 'previous_period') {
+      url.searchParams.delete('compare');
+    } else {
+      url.searchParams.set('compare', state.compare);
+    }
   }
 
-  if (state.metric === 'visitors') {
-    url.searchParams.delete('metric');
-  } else {
-    url.searchParams.set('metric', state.metric);
+  if (state.metric !== undefined) {
+    if (state.metric === 'visitors') {
+      url.searchParams.delete('metric');
+    } else {
+      url.searchParams.set('metric', state.metric);
+    }
   }
 
-  if (state.filters.length > 0) {
-    url.searchParams.set('filters', JSON.stringify(state.filters));
-  } else {
-    url.searchParams.delete('filters');
+  if (state.filters !== undefined) {
+    if (state.filters.length > 0) {
+      url.searchParams.set('filters', JSON.stringify(state.filters));
+    } else {
+      url.searchParams.delete('filters');
+    }
   }
 
   // Clear legacy field keys if any
@@ -202,5 +211,7 @@ export function updateDashboardUrlState(state: DashboardUrlState): void {
     url.searchParams.delete(f);
   }
 
-  window.history.replaceState({}, '', url.toString());
+  if (window.history) {
+    window.history.replaceState({}, '', url.toString());
+  }
 }

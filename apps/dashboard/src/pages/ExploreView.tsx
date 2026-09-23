@@ -176,7 +176,11 @@ export const ExploreView: React.FC<ExploreViewProps> = ({ project }) => {
     return item.key.toLowerCase().includes(q) || (item.label && item.label.toLowerCase().includes(q));
   });
 
-  const maxVal = Math.max(...filteredItems.map((i) => (primaryMetric === 'views' ? i.pageViews : i[primaryMetric]) || 0), 1);
+  const getMetricVal = (item: BreakdownItem, m: 'visitors' | 'page_views' | 'sessions'): number => {
+    return m === 'page_views' ? item.pageViews : item[m];
+  };
+
+  const maxVal = Math.max(...filteredItems.map((i) => getMetricVal(i, primaryMetric) || 0), 1);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
@@ -333,7 +337,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({ project }) => {
           /* Distribution Bar Chart View */
           <div style={{ padding: 'var(--space-6)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
             {filteredItems.slice(0, 15).map((item, idx) => {
-              const val = primaryMetric === 'views' ? item.pageViews : item[primaryMetric];
+              const val = getMetricVal(item, primaryMetric);
               const pct = Math.min(100, Math.round(((val || 0) / maxVal) * 100));
 
               return (
@@ -392,7 +396,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({ project }) => {
               </thead>
               <tbody>
                 {filteredItems.map((item, idx) => {
-                  const val = primaryMetric === 'views' ? item.pageViews : item[primaryMetric];
+                  const val = getMetricVal(item, primaryMetric);
                   const barPercent = Math.min(100, Math.round(((val || 0) / maxVal) * 100));
 
                   return (

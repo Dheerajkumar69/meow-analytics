@@ -19,7 +19,7 @@ export async function buildApp(opts: FastifyServerOptions = {}): Promise<Fastify
   const config = getConfig();
 
   const app = Fastify({
-    logger: false, // Structured uniform logging via structuredLoggerPlugin
+    logger: opts.logger !== undefined ? opts.logger : (config.NODE_ENV === 'test' ? false : { level: config.LOG_LEVEL }),
     trustProxy: true,
     bodyLimit: 64 * 1024, // 64 KB payload size limit
     ...opts,

@@ -29,10 +29,21 @@ async function start() {
     // Start background aggregations & retention scheduler
     startScheduler();
 
+    let isShuttingDown = false;
     const signals: NodeJS.Signals[] = ['SIGINT', 'SIGTERM'];
     for (const signal of signals) {
       process.on(signal, async () => {
+        if (isShuttingDown) return;
+        isShuttingDown = true;
         console.log(`\n🛑 Received ${signal}, shutting down gracefully...`);
+
+        // Force exit after 10s if hanging
+        const forceExitTimer = setTimeout(() => {
+          console.error('⚠️ Graceful shutdown timed out after 10 seconds. Forcing exit.');
+          process.exit(1);
+        }, 10000);
+        forceExitTimer.unref();
+
         try {
           stopScheduler();
           await app.close();
@@ -45,6 +56,15 @@ async function start() {
         }
       });
     }
+
+    process.on('uncaughtException', (err) => {
+      console.error('💥 Uncaught Exception:', err);
+      process.exit(1);
+    });
+
+    process.on('unhandledRejection', (reason) => {
+      console.error('💥 Unhandled Rejection:', reason);
+    });
   } catch (err: any) {
     console.error('💥 Fatal error starting server:', err.message || err);
     process.exit(1);

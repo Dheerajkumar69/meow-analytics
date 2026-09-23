@@ -21,6 +21,7 @@ import {
 } from '@meow-analytics/database';
 import { eq, and, ne, desc, gte, lte, sql } from 'drizzle-orm';
 import { NotFoundError } from '../plugins/error-handler.js';
+import { analyticsCache, projectValidationCache } from '../lib/cache.js';
 
 export const projectRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   // All project endpoints require admin authentication
@@ -127,6 +128,10 @@ export const projectRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
     if (body.event_retention_days !== undefined) updates.event_retention_days = body.event_retention_days;
 
     await db.update(projects).set(updates).where(eq(projects.id, id));
+    projectValidationCache.invalidate(id);
+    if (existing.site_id) {
+      projectValidationCache.invalidate(existing.site_id);
+    }
 
     const updatedRows = await db
       .select()
@@ -158,8 +163,14 @@ export const projectRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
       throw new NotFoundError(`Project with ID "${id}" was not found`);
     }
 
+    const siteId = rows[0]?.site_id;
     // Physical deletion triggers foreign key cascade across all project tables
     await db.delete(projects).where(eq(projects.id, id));
+    projectValidationCache.invalidate(id);
+    if (siteId) {
+      projectValidationCache.invalidate(siteId);
+      analyticsCache.invalidateSite(siteId);
+    }
 
     return reply.status(200).send({
       success: true,
@@ -210,6 +221,8 @@ export const projectRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
     const perfRes = await db
       .delete(performanceMetrics)
       .where(and(eq(performanceMetrics.site_id, siteId), gte(performanceMetrics.timestamp, fromDate), lte(performanceMetrics.timestamp, toDate)));
+
+    analyticsCache.invalidateSite(siteId);
 
     return reply.status(200).send({
       success: true,
@@ -271,6 +284,8 @@ export const projectRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
         deletedCount += (res as any).rowCount || 0;
       }
     }
+
+    analyticsCache.invalidateSite(siteId);
 
     return reply.status(200).send({
       success: true,

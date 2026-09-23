@@ -66,6 +66,10 @@ export function getDatabase(connectionUrl?: string): DatabaseInstance {
     ssl: isSslRequired ? { rejectUnauthorized: false } : undefined,
   });
 
+  poolInstance.on('error', (err) => {
+    console.error('[DATABASE POOL ERROR] Unexpected error on idle client:', err);
+  });
+
   dbInstance = drizzlePg(poolInstance, { schema });
   return dbInstance;
 }
@@ -99,11 +103,19 @@ export async function checkDatabaseHealth(connectionUrl?: string): Promise<boole
 
 export async function closeDatabaseConnection(): Promise<void> {
   if (poolInstance) {
-    await poolInstance.end();
+    try {
+      await poolInstance.end();
+    } catch (err) {
+      console.warn('[DATABASE POOL ERROR] Error closing pool:', err);
+    }
     poolInstance = null;
   }
   if (pgliteInstance) {
-    await pgliteInstance.close();
+    try {
+      await pgliteInstance.close();
+    } catch (err) {
+      console.warn('[DATABASE PGLITE ERROR] Error closing pglite:', err);
+    }
     pgliteInstance = null;
   }
   dbInstance = null;
@@ -253,7 +265,7 @@ export async function migrateDatabase(connectionUrl?: string): Promise<void> {
       id VARCHAR(64) PRIMARY KEY,
       session_id VARCHAR(64) NOT NULL,
       site_id VARCHAR(64) NOT NULL REFERENCES projects(site_id) ON DELETE CASCADE,
-      visitor_id VARCHAR(64) NOT NULL REFERENCES visitors(id) ON DELETE CASCADE,
+      visitor_id VARCHAR(64) REFERENCES visitors(id) ON DELETE SET NULL,
       started_at TIMESTAMPTZ NOT NULL,
       last_seen_at TIMESTAMPTZ NOT NULL,
       landing_page VARCHAR(2048) NOT NULL,
@@ -266,6 +278,12 @@ export async function migrateDatabase(connectionUrl?: string): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+
+  // Ensure sessions.visitor_id is nullable and cascades with SET NULL on existing tables
+  await db.execute(sql`ALTER TABLE sessions ALTER COLUMN visitor_id DROP NOT NULL`).catch(() => {});
+  await db.execute(sql`ALTER TABLE sessions DROP CONSTRAINT IF EXISTS sessions_visitor_id_visitors_id_fk`).catch(() => {});
+  await db.execute(sql`ALTER TABLE sessions DROP CONSTRAINT IF EXISTS sessions_visitor_id_fkey`).catch(() => {});
+  await db.execute(sql`ALTER TABLE sessions ADD CONSTRAINT sessions_visitor_id_visitors_id_fk FOREIGN KEY (visitor_id) REFERENCES visitors(id) ON DELETE SET NULL`).catch(() => {});
 
   await db.execute(sql`
     CREATE UNIQUE INDEX IF NOT EXISTS sessions_site_session_idx ON sessions(site_id, session_id)
@@ -487,6 +505,7 @@ export async function migrateDatabase(connectionUrl?: string): Promise<void> {
   await db.execute(sql`CREATE INDEX IF NOT EXISTS page_views_site_time_desc_idx ON page_views(site_id, timestamp DESC)`);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS sessions_site_started_desc_idx ON sessions(site_id, started_at DESC)`);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS sessions_site_last_seen_desc_idx ON sessions(site_id, last_seen_at DESC)`);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS sessions_site_visitor_last_seen_idx ON sessions(site_id, visitor_id, last_seen_at DESC)`);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS hourly_aggregates_site_bucket_asc_idx ON hourly_aggregates(site_id, bucket_time ASC)`);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS daily_aggregates_site_bucket_asc_idx ON daily_aggregates(site_id, bucket_date ASC)`);
 }

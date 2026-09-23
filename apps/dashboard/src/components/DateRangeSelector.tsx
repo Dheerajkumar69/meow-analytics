@@ -7,9 +7,13 @@ interface DateRangeSelectorProps {
   preset: TimeRangePreset;
   customFrom?: string;
   customTo?: string;
-  compare: ComparisonType;
-  onRangeChange: (preset: TimeRangePreset, customFrom?: string, customTo?: string) => void;
-  onCompareChange: (compare: ComparisonType) => void;
+  compare?: ComparisonType;
+  comparison?: ComparisonType | string;
+  onRangeChange?: (preset: TimeRangePreset, customFrom?: string, customTo?: string) => void;
+  onCompareChange?: (compare: ComparisonType) => void;
+  onPresetChange?: (preset: TimeRangePreset) => void;
+  onCustomDateChange?: (customFrom?: string, customTo?: string) => void;
+  onComparisonChange?: (compare: any) => void;
 }
 
 const PRESETS: { key: TimeRangePreset; label: string }[] = [
@@ -35,13 +39,40 @@ export const DateRangeSelector: React.FC<DateRangeSelectorProps> = ({
   customFrom,
   customTo,
   compare,
+  comparison,
   onRangeChange,
   onCompareChange,
+  onPresetChange,
+  onCustomDateChange,
+  onComparisonChange,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [tempFrom, setTempFrom] = useState(customFrom || '');
   const [tempTo, setTempTo] = useState(customTo || '');
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const activeCompare = (compare || (comparison as ComparisonType) || 'previous_period');
+
+  const triggerRangeChange = (newPreset: TimeRangePreset, newFrom?: string, newTo?: string) => {
+    if (onRangeChange) {
+      onRangeChange(newPreset, newFrom, newTo);
+    }
+    if (onPresetChange) {
+      onPresetChange(newPreset);
+    }
+    if (onCustomDateChange) {
+      onCustomDateChange(newFrom, newTo);
+    }
+  };
+
+  const triggerCompareChange = (newCompare: ComparisonType) => {
+    if (onCompareChange) {
+      onCompareChange(newCompare);
+    }
+    if (onComparisonChange) {
+      onComparisonChange(newCompare);
+    }
+  };
 
   useEffect(() => {
     setTempFrom(customFrom || '');
@@ -64,12 +95,12 @@ export const DateRangeSelector: React.FC<DateRangeSelectorProps> = ({
   }, [isOpen]);
 
   const activePresetLabel = PRESETS.find((p) => p.key === preset)?.label || 'Custom';
-  const activeCompareLabel = COMPARISONS.find((c) => c.key === compare)?.label || 'No comparison';
+  const activeCompareLabel = COMPARISONS.find((c) => c.key === activeCompare)?.label || 'No comparison';
 
   const handleApplyCustom = (e: React.FormEvent) => {
     e.preventDefault();
     if (tempFrom && tempTo) {
-      onRangeChange('custom', tempFrom, tempTo);
+      triggerRangeChange('custom', tempFrom, tempTo);
       setIsOpen(false);
     }
   };
@@ -137,7 +168,7 @@ export const DateRangeSelector: React.FC<DateRangeSelectorProps> = ({
                       justifyContent: 'center',
                     }}
                     onClick={() => {
-                      onRangeChange(p.key);
+                      triggerRangeChange(p.key);
                       setIsOpen(false);
                     }}
                   >
@@ -195,8 +226,8 @@ export const DateRangeSelector: React.FC<DateRangeSelectorProps> = ({
         <select
           id="compare-selector"
           className="select"
-          value={compare}
-          onChange={(e) => onCompareChange(e.target.value as ComparisonType)}
+          value={activeCompare}
+          onChange={(e) => triggerCompareChange(e.target.value as ComparisonType)}
           style={{
             fontSize: '0.8125rem',
             padding: '0.375rem 0.75rem',

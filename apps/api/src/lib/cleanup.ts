@@ -1,4 +1,4 @@
-import { getDatabase, projects, cleanupCheckpoints, visitors, events } from '@meow-analytics/database';
+import { getDatabase, projects, cleanupCheckpoints, visitors, events, sessions } from '@meow-analytics/database';
 import { sql, eq, ne, inArray } from 'drizzle-orm';
 import { runHourlyAggregation, runDailyAggregation } from './aggregation.js';
 
@@ -99,12 +99,18 @@ export async function runRetentionCleanup(options: CleanupOptions = {}): Promise
           break;
         }
 
-        // Anonymize visitor_id in events first, then delete visitor records
+        // Anonymize visitor_id in events and sessions first, then delete visitor records
         if (ids.length > 0) {
           await db
             .update(events)
             .set({ visitor_id: null })
             .where(inArray(events.visitor_id, ids))
+            .catch(() => {});
+
+          await db
+            .update(sessions)
+            .set({ visitor_id: null })
+            .where(inArray(sessions.visitor_id, ids))
             .catch(() => {});
 
           await db

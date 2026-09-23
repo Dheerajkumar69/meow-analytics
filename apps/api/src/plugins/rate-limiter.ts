@@ -52,6 +52,9 @@ export const rateLimiterPlugin: FastifyPluginAsync<RateLimiterOptions> = fp(
         }
       }
     }, 30 * 1000);
+    if (typeof gcInterval.unref === 'function') {
+      gcInterval.unref();
+    }
 
     app.addHook('onClose', (_instance, done) => {
       clearInterval(gcInterval);
@@ -124,11 +127,13 @@ export const rateLimiterPlugin: FastifyPluginAsync<RateLimiterOptions> = fp(
       }
 
       ipBucket.timestamps.push(now);
+    });
 
-      // 2. Per-Site Rate Limiting for Ingestion
-      if (url === '/api/v1/collect') {
+    // 2. Per-Site Rate Limiting for Ingestion (Checked after body is parsed in preValidation)
+    app.addHook('preValidation', async (request: FastifyRequest, reply: FastifyReply) => {
+      const url = request.url.split('?')[0] || request.url;
+      if (url === '/api/v1/collect' || url === '/api/v1/performance') {
         let siteId: string | undefined;
-        // Check query or body if parsed
         if (typeof (request.query as any)?.siteId === 'string') {
           siteId = (request.query as any).siteId;
         } else if (typeof (request.body as any)?.siteId === 'string') {
@@ -136,6 +141,8 @@ export const rateLimiterPlugin: FastifyPluginAsync<RateLimiterOptions> = fp(
         }
 
         if (siteId) {
+          const now = Date.now();
+          const windowCutoff = now - settings.windowMs;
           let siteBucket = siteWindows.get(siteId);
           if (!siteBucket) {
             siteBucket = { timestamps: [] };

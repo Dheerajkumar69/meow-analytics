@@ -11,8 +11,7 @@ export const sessions = pgTable(
       .notNull()
       .references(() => projects.site_id, { onDelete: 'cascade' }),
     visitor_id: varchar('visitor_id', { length: 64 })
-      .notNull()
-      .references(() => visitors.id, { onDelete: 'cascade' }),
+      .references(() => visitors.id, { onDelete: 'set null' }),
     started_at: timestamp('started_at', { withTimezone: true }).notNull(),
     last_seen_at: timestamp('last_seen_at', { withTimezone: true }).notNull(),
     landing_page: varchar('landing_page', { length: 2048 }).notNull(),
@@ -54,6 +53,7 @@ export const sessions = pgTable(
     siteBrowserIdx: index('sessions_site_browser_idx').on(table.site_id, table.browser),
     siteOsIdx: index('sessions_site_os_idx').on(table.site_id, table.os),
     siteIsBotIdx: index('sessions_site_is_bot_idx').on(table.site_id, table.is_bot),
+    siteVisitorLastSeenIdx: index('sessions_site_visitor_last_seen_idx').on(table.site_id, table.visitor_id, table.last_seen_at),
   })
 );
 

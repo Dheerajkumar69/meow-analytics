@@ -6,6 +6,9 @@ let hourlyTimer: NodeJS.Timeout | null = null;
 let dailyTimer: NodeJS.Timeout | null = null;
 let cleanupTimer: NodeJS.Timeout | null = null;
 let isRunning = false;
+let isHourlyRunning = false;
+let isDailyRunning = false;
+let isCleanupRunning = false;
 
 export function startScheduler(): void {
   const config = getConfig();
@@ -22,6 +25,13 @@ export function startScheduler(): void {
   // 1. Hourly Aggregation Worker (Runs every 15 minutes)
   const HOURLY_INTERVAL = 15 * 60 * 1000;
   hourlyTimer = setInterval(async () => {
+    if (isHourlyRunning) {
+      if (config.NODE_ENV !== 'test') {
+        console.warn('[Scheduler] Previous hourly aggregation still running, skipping interval.');
+      }
+      return;
+    }
+    isHourlyRunning = true;
     try {
       const count = await runHourlyAggregation();
       if (count > 0 && config.NODE_ENV !== 'test') {
@@ -29,12 +39,21 @@ export function startScheduler(): void {
       }
     } catch (err: any) {
       console.error('[Scheduler] Hourly aggregation error:', err.message || err);
+    } finally {
+      isHourlyRunning = false;
     }
   }, HOURLY_INTERVAL);
 
   // 2. Daily Aggregation Worker (Runs every 60 minutes)
   const DAILY_INTERVAL = 60 * 60 * 1000;
   dailyTimer = setInterval(async () => {
+    if (isDailyRunning) {
+      if (config.NODE_ENV !== 'test') {
+        console.warn('[Scheduler] Previous daily aggregation still running, skipping interval.');
+      }
+      return;
+    }
+    isDailyRunning = true;
     try {
       const count = await runDailyAggregation();
       if (count > 0 && config.NODE_ENV !== 'test') {
@@ -42,12 +61,21 @@ export function startScheduler(): void {
       }
     } catch (err: any) {
       console.error('[Scheduler] Daily aggregation error:', err.message || err);
+    } finally {
+      isDailyRunning = false;
     }
   }, DAILY_INTERVAL);
 
   // 3. Retention Cleanup Worker (Runs every 24 hours, default)
   const CLEANUP_INTERVAL = 24 * 60 * 60 * 1000;
   cleanupTimer = setInterval(async () => {
+    if (isCleanupRunning) {
+      if (config.NODE_ENV !== 'test') {
+        console.warn('[Scheduler] Previous retention cleanup still running, skipping interval.');
+      }
+      return;
+    }
+    isCleanupRunning = true;
     try {
       const report = await runRetentionCleanup();
       if (config.NODE_ENV !== 'test') {
@@ -58,6 +86,8 @@ export function startScheduler(): void {
       }
     } catch (err: any) {
       console.error('[Scheduler] Retention cleanup error:', err.message || err);
+    } finally {
+      isCleanupRunning = false;
     }
   }, CLEANUP_INTERVAL);
 
@@ -84,5 +114,8 @@ export function stopScheduler(): void {
   }
 
   isRunning = false;
+  isHourlyRunning = false;
+  isDailyRunning = false;
+  isCleanupRunning = false;
   console.log('🛑 Background scheduler stopped.');
 }
