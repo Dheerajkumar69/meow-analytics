@@ -168,6 +168,8 @@ export const App: React.FC = () => {
                   selectedProject={selectedProject}
                   onRefreshProjects={loadProjects}
                   onSelectProject={setSelectedProject}
+                  onOpenCreateProject={() => setIsCreateProjectOpen(true)}
+                  onNavigateToTab={(tab) => setActiveTab(tab as any)}
                 />
               ) : activeTab === 'settings' ? (
                 <SettingsView

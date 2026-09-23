@@ -106,7 +106,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           style={{
             position: 'fixed',
             inset: 0,
-            backgroundColor: 'rgba(9, 13, 22, 0.7)',
+            backgroundColor: 'var(--color-surface-overlay)',
             backdropFilter: 'blur(4px)',
             zIndex: 90,
           }}

@@ -580,7 +580,7 @@ a:hover {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background-color: rgba(9, 13, 22, 0.7);
+  background-color: var(--color-surface-overlay);
   backdrop-filter: blur(6px);
   display: flex;
   align-items: center;

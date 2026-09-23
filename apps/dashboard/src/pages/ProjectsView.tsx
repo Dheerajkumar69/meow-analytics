@@ -18,6 +18,10 @@ import {
   ShieldCheck,
   Database,
   Calendar,
+  ArrowLeft,
+  Search,
+  BarChart3,
+  FolderKanban,
 } from 'lucide-react';
 
 interface ProjectsViewProps {
@@ -25,6 +29,8 @@ interface ProjectsViewProps {
   selectedProject: Project | null;
   onRefreshProjects: () => void;
   onSelectProject: (p: Project) => void;
+  onOpenCreateProject?: () => void;
+  onNavigateToTab?: (tab: string) => void;
 }
 
 export const ProjectsView: React.FC<ProjectsViewProps> = ({
@@ -32,7 +38,13 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
   selectedProject,
   onRefreshProjects,
   onSelectProject,
+  onOpenCreateProject,
+  onNavigateToTab,
 }) => {
+  const [viewMode, setViewMode] = useState<'directory' | 'details'>(
+    selectedProject ? 'details' : 'directory'
+  );
+  const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'domains' | 'keys' | 'settings'>('domains');
   const [domains, setDomains] = useState<ProjectDomain[]>([]);
   const [keys, setKeys] = useState<ApiKey[]>([]);
@@ -266,18 +278,288 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
     setTimeout(() => setCopiedFn(false), 2000);
   };
 
-  if (!selectedProject) {
+  const filteredProjects = projects.filter(
+    (p) =>
+      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      p.site_id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      p.timezone.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  if (viewMode === 'directory' || !selectedProject) {
     return (
-      <EmptyAnalytics
-        title="Projects & Security Keys"
-        description="Select an existing project or click 'New Project' in the header bar to configure domain whitelisting, API credentials, and data retention policies."
-        project={null}
-      />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)', maxWidth: '1200px' }}>
+        {/* Header Bar */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-4)' }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+              <div
+                style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: 'var(--radius-md)',
+                  backgroundColor: 'var(--color-surface-subtle)',
+                  border: '1px solid var(--color-border)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'var(--color-accent)',
+                }}
+              >
+                <FolderKanban size={22} />
+              </div>
+              <div>
+                <h1 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0, color: 'var(--color-text-primary)' }}>
+                  Projects & Applications
+                </h1>
+                <p style={{ fontSize: '0.875rem', color: 'var(--color-text-secondary)', margin: 'var(--space-1) 0 0 0' }}>
+                  Manage connected websites, telemetry domain whitelists, API keys, and privacy retention rules.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={onRefreshProjects}
+              title="Refresh project list"
+            >
+              Refresh
+            </button>
+            {onOpenCreateProject && (
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={onOpenCreateProject}
+                style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1-5)' }}
+              >
+                <Plus size={15} />
+                <span>Register Project</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Search & Statistics Filter Bar */}
+        <div className="card" style={{ padding: 'var(--space-3) var(--space-4)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-4)', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flex: 1, minWidth: '240px' }}>
+              <Search size={16} color="var(--color-text-muted)" />
+              <input
+                type="text"
+                className="input"
+                style={{ border: 'none', background: 'transparent', padding: 'var(--space-1) 0', width: '100%' }}
+                placeholder="Search projects by name, site ID, or timezone..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setSearchQuery('')}
+                  style={{ fontSize: '0.75rem', padding: '2px 6px' }}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', fontSize: '0.8125rem', color: 'var(--color-text-secondary)' }}>
+              <span>Total: <strong style={{ color: 'var(--color-text-primary)' }}>{projects.length}</strong></span>
+              <span>•</span>
+              <span>Active: <strong style={{ color: 'var(--color-accent)' }}>{projects.filter((p) => p.status === 'active').length}</strong></span>
+            </div>
+          </div>
+        </div>
+
+        {/* Project Cards Grid */}
+        {filteredProjects.length === 0 ? (
+          projects.length === 0 ? (
+            <EmptyAnalytics
+              title="No Projects Configured"
+              description="Register your first website or application to start collecting privacy-friendly web analytics."
+              project={null}
+            />
+          ) : (
+            <div className="card" style={{ padding: 'var(--space-8)', textAlign: 'center' }}>
+              <p style={{ color: 'var(--color-text-secondary)' }}>No projects matching "{searchQuery}"</p>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                style={{ marginTop: 'var(--space-3)' }}
+                onClick={() => setSearchQuery('')}
+              >
+                Reset Search
+              </button>
+            </div>
+          )
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: 'var(--space-4)' }}>
+            {filteredProjects.map((p) => {
+              const isSelected = selectedProject?.id === p.id;
+              return (
+                <div
+                  key={p.id}
+                  className="card card-hover"
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    border: isSelected ? '1px solid var(--color-accent)' : '1px solid var(--color-border)',
+                    backgroundColor: isSelected ? 'var(--color-surface-subtle)' : 'var(--color-surface-base)',
+                  }}
+                >
+                  <div className="card-body" style={{ padding: 'var(--space-5)' }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 'var(--space-2)' }}>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                          <h3 style={{ fontSize: '1.125rem', fontWeight: 600, margin: 0, color: 'var(--color-text-primary)' }}>
+                            {p.name}
+                          </h3>
+                          {isSelected && (
+                            <span className="badge badge-accent" style={{ fontSize: '0.6875rem' }}>Current</span>
+                          )}
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Site ID:</span>
+                          <code style={{ fontSize: '0.8125rem', color: 'var(--color-text-primary)', backgroundColor: 'var(--color-surface-subtle)', padding: '1px 6px', borderRadius: 'var(--radius-xs)' }}>
+                            {p.site_id}
+                          </code>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-icon"
+                            style={{ padding: '2px' }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              copyToClipboard(p.site_id, setCopiedSiteId);
+                            }}
+                            title="Copy Site ID"
+                          >
+                            <Copy size={13} />
+                          </button>
+                        </div>
+                      </div>
+                      <span className="badge badge-accent" style={{ textTransform: 'capitalize' }}>
+                        {p.status}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-2)', marginTop: 'var(--space-4)', fontSize: '0.75rem', color: 'var(--color-text-secondary)', borderTop: '1px solid var(--color-border-subtle)', paddingTop: 'var(--space-3)' }}>
+                      <div>
+                        <span style={{ color: 'var(--color-text-muted)' }}>Timezone:</span>{' '}
+                        <span>{p.timezone}</span>
+                      </div>
+                      <div>
+                        <span style={{ color: 'var(--color-text-muted)' }}>Privacy:</span>{' '}
+                        <span style={{ textTransform: 'capitalize' }}>{p.privacy_mode || 'balanced'}</span>
+                      </div>
+                      <div>
+                        <span style={{ color: 'var(--color-text-muted)' }}>Retention:</span>{' '}
+                        <span>{p.event_retention_days ?? 90} days</span>
+                      </div>
+                      <div>
+                        <span style={{ color: 'var(--color-text-muted)' }}>Created:</span>{' '}
+                        <span>{new Date(p.created_at).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      padding: 'var(--space-3) var(--space-5)',
+                      backgroundColor: 'var(--color-surface-subtle)',
+                      borderTop: '1px solid var(--color-border)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 'var(--space-2)',
+                    }}
+                  >
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      style={{ flex: 1, justifyContent: 'center' }}
+                      onClick={() => {
+                        onSelectProject(p);
+                        setViewMode('details');
+                      }}
+                    >
+                      <Key size={13} />
+                      <span>Keys & Config</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      style={{ flex: 1, justifyContent: 'center' }}
+                      onClick={() => {
+                        onSelectProject(p);
+                        if (onNavigateToTab) {
+                          onNavigateToTab('overview');
+                        }
+                      }}
+                    >
+                      <BarChart3 size={13} />
+                      <span>View Live UI</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     );
   }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)', maxWidth: '1000px' }}>
+      {/* Return to Directory & Switcher Bar */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--space-3)' }}>
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
+          onClick={() => setViewMode('directory')}
+          style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}
+        >
+          <ArrowLeft size={14} />
+          <span>All Projects Directory ({projects.length})</span>
+        </button>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+          <label style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', fontWeight: 500 }}>
+            Switch Project:
+          </label>
+          <select
+            className="select"
+            style={{ padding: 'var(--space-1) var(--space-3)', height: '32px', fontSize: '0.8125rem' }}
+            value={selectedProject.id}
+            onChange={(e) => {
+              const found = projects.find((p) => p.id === e.target.value);
+              if (found) onSelectProject(found);
+            }}
+          >
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name} ({p.site_id})
+              </option>
+            ))}
+          </select>
+          {onNavigateToTab && (
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => onNavigateToTab('overview')}
+              style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1-5)' }}
+            >
+              <BarChart3 size={14} />
+              <span>Open Analytics</span>
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Project Header Card */}
       <div className="card">
         <div className="card-body" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

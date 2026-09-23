@@ -434,8 +434,8 @@ class ApiClient {
     } else if (envSecret) {
       this.secret = envSecret;
     } else {
-      // Default fallback for dev ease
-      this.secret = 'meow_admin_super_secret_key_12345';
+      // Default fallback matching development environment
+      this.secret = 'cffc57acd9e24aeea1c5327b271bd4812ceb6733962722fb';
     }
   }
 
