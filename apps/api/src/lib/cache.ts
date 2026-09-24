@@ -59,8 +59,12 @@ class AnalyticsCache {
 
   public invalidateSite(siteId: string): void {
     for (const key of this.cache.keys()) {
+      // Cache keys are pipe-delimited: "endpoint|siteId|param:val|..."
+      // BUG-J FIX: Previously the second condition used `key.startsWith(`${siteId}:`)` with a
+      // colon separator — this never matched because the format uses pipes. Now uses the correct
+      // pipe delimiter to catch any other key shapes that might include the siteId as a prefix.
       const parts = key.split('|');
-      if (parts[1] === siteId || key.startsWith(`${siteId}:`)) {
+      if (parts[1] === siteId || key.startsWith(`${siteId}|`)) {
         this.cache.delete(key);
       }
     }

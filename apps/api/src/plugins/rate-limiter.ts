@@ -70,16 +70,11 @@ export const rateLimiterPlugin: FastifyPluginAsync<RateLimiterOptions> = fp(
 
       const now = Date.now();
 
-      // Resolve client IP
-      const forwarded = request.headers['x-forwarded-for'];
-      const ip =
-        (typeof forwarded === 'string'
-          ? forwarded.split(',')[0]?.trim()
-          : Array.isArray(forwarded)
-          ? forwarded[0]?.trim()
-          : '') ||
-        request.ip ||
-        '127.0.0.1';
+      // BUG-N FIX: Use request.ip (Fastify resolves via trustProxy:true) instead of
+      // reading x-forwarded-for directly. The raw header is user-controlled and spoofable.
+      // A malicious actor could set x-forwarded-for: 127.0.0.1 to bypass the test-env exemption
+      // or cycle through fake IPs to evade per-IP rate limiting entirely.
+      const ip = request.ip || '127.0.0.1';
 
       // In test environment, exempt default local runner address (127.0.0.1) so synthetic in-memory batches
       // don't throttle unrelated unit tests, while enforcing on simulated client IPs (e.g. 198.51.100.42).

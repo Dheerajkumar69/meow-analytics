@@ -129,12 +129,19 @@ export function createEventQueue(config: MeowConfig): EventQueue {
     }, 4000); // 4-second hard timeout for failure isolation
 
     try {
+      // BUG-F FIX: When useKeepAlive is true (page-unload / beacon-fallback path),
+      // use text/plain so the browser doesn't fire a CORS preflight on unload.
+      // The server already parses text/plain (added for navigator.sendBeacon support).
+      // Using application/json here would trigger a preflight that the browser
+      // cancels on unload, causing the request to be silently dropped.
+      const isUnload = useKeepAlive;
+      const body = JSON.stringify(payload);
       const res = await fetch(url, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': isUnload ? 'text/plain;charset=UTF-8' : 'application/json',
         },
-        body: JSON.stringify(payload),
+        body,
         keepalive: useKeepAlive,
         signal: controller?.signal,
       });

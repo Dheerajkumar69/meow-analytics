@@ -308,8 +308,16 @@ export const collectRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
         let targetSessionId = ev.sessionId?.trim();
         let isReturning = false;
 
-        const sessionCacheKey = targetSessionId ? `${visitorDbId}:${targetSessionId}` : '';
-        const cachedSess = sessionCacheKey ? batchSessions.get(sessionCacheKey) : null;
+        // BUG-I FIX: Use a visitor-only cache key when no client sessionId is present.
+        // Previously sessionCacheKey was '' when targetSessionId was undefined, so the cache
+        // was never consulted or populated, causing N DB queries for N events in one batch.
+        // Now we always have a key: prefer the full composite key when a client sid is given,
+        // otherwise fall back to the visitor-only key (still safe — we resolve the same active
+        // session for all events from the same visitor in a single batch).
+        const sessionCacheKey = targetSessionId
+          ? `${visitorDbId}:${targetSessionId}`
+          : `visitor:${visitorDbId}`;
+        const cachedSess = batchSessions.get(sessionCacheKey);
 
         if (cachedSess) {
           targetSessionId = cachedSess.sessionId;
@@ -365,12 +373,11 @@ export const collectRoutes: FastifyPluginAsync = async (fastify: FastifyInstance
           `);
           isReturning = priorSessions.rows.length > 0;
 
-          if (sessionCacheKey) {
-            batchSessions.set(sessionCacheKey, {
-              sessionId: targetSessionId,
-              isReturning,
-            });
-          }
+          // Always cache so subsequent events in this batch skip the DB lookup
+          batchSessions.set(sessionCacheKey, {
+            sessionId: targetSessionId,
+            isReturning,
+          });
         }
 
         // --- 5C. Deduplication Insert into events with visitor_id & session_id ALREADY POPULATED ---

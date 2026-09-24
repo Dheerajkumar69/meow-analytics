@@ -511,16 +511,21 @@ export const MeowAnalytics = {
         } catch {}
       }, intervalMs);
 
-      // Handle visibility changes
+      // Handle visibility changes — only re-ping on tab becoming visible.
+      // NOTE: flushing on visibilityState === 'hidden' is handled by the queue itself
+      // (queue.ts registers its own visibilitychange listener). Doing it here too would
+      // cause the isFlushing mutex to discard the second flush, silently dropping events.
       if (typeof document !== 'undefined' && !visibilityHandler) {
         visibilityHandler = () => {
           try {
+            // BUG-H FIX: Check isEnabled before firing a ping so that meowAnalytics.disable()
+            // actually suppresses all tracking, including visibility-triggered pings.
+            if (!isEnabled || !isInitialized) return;
             if (document.visibilityState === 'visible') {
               getOrCreateSessionId(); // Refresh session activity
               MeowAnalytics.ping();
-            } else if (document.visibilityState === 'hidden') {
-              MeowAnalytics.flush(true);
             }
+            // 'hidden' case intentionally omitted — the queue handles flush on hide.
           } catch {}
         };
         document.addEventListener('visibilitychange', visibilityHandler);
@@ -1035,10 +1040,12 @@ export const MeowAnalytics = {
       }
       currentConfig = null;
       isInitialized = false;
-      // BUG-19 FIX: Reset in-memory IDs on destroy so that re-initialization
+      // BUG-M FIX: Reset BOTH in-memory IDs on destroy so that re-initialization
       // with a different siteId (or a different site on the same page) does not
       // inherit stale visitor/session IDs from the previous instance.
       inMemoryVisitorId = null;
+      inMemorySessionId = null;
+      inMemorySessionLastActivity = 0;
     } catch {
       // Fail silently
     }
@@ -1063,6 +1070,9 @@ function autoInitFromScriptTag(): void {
     const siteId = scriptEl.getAttribute('data-site-id');
     if (!siteId) return;
 
+    // Resolve host from data-host attribute, then fall back to the script's own origin.
+    // This means the script MUST be served from the analytics API server, or data-host
+    // must be explicitly set — otherwise events will be sent to the tracked site itself.
     let host = scriptEl.getAttribute('data-host') || '';
     if (!host && scriptEl.src) {
       try {
@@ -1071,14 +1081,46 @@ function autoInitFromScriptTag(): void {
       } catch {}
     }
 
+    if (!host) {
+      // Fallback: use current window origin. Warn loudly so developers know to fix this.
+      if (typeof window !== 'undefined') {
+        host = window.location.origin;
+      }
+      console.warn(
+        '[MeowAnalytics] No host resolved from data-host attribute or script src. ' +
+        'Events will be sent to the current origin (' + host + '). ' +
+        'Add data-host="https://your-analytics-api.com" to your script tag to fix this.'
+      );
+    }
+
     const autoTrack = scriptEl.getAttribute('data-auto-track') !== 'false';
     const debug = scriptEl.getAttribute('data-debug') === 'true';
+    const trackPerformance = scriptEl.getAttribute('data-track-performance') !== 'false';
+    const trackErrors = scriptEl.getAttribute('data-track-errors') !== 'false';
+    const trackOutboundClicks = scriptEl.getAttribute('data-track-outbound') !== 'false';
+    const trackDownloads = scriptEl.getAttribute('data-track-downloads') !== 'false';
+
+    // Optional numeric overrides via script attributes
+    const rawSampleRate = scriptEl.getAttribute('data-perf-sample-rate');
+    const rawHeartbeat = scriptEl.getAttribute('data-heartbeat-interval');
+    const rawSessionTimeout = scriptEl.getAttribute('data-session-timeout');
+
+    const performanceSampleRate = rawSampleRate ? Math.max(0, Math.min(1, parseFloat(rawSampleRate))) : undefined;
+    const heartbeatIntervalMs = rawHeartbeat ? Math.max(10000, parseInt(rawHeartbeat, 10)) : undefined;
+    const sessionTimeoutMs = rawSessionTimeout ? Math.max(60000, parseInt(rawSessionTimeout, 10)) : undefined;
 
     MeowAnalytics.init({
       siteId,
       host,
       autoTrack,
       debug,
+      trackPerformance,
+      trackErrors,
+      trackOutboundClicks,
+      trackDownloads,
+      ...(performanceSampleRate !== undefined && { performanceSampleRate }),
+      ...(heartbeatIntervalMs !== undefined && { heartbeatIntervalMs }),
+      ...(sessionTimeoutMs !== undefined && { sessionTimeoutMs }),
     });
   } catch {
     // Fail silently: never break host website

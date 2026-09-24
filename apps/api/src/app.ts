@@ -25,7 +25,7 @@ export async function buildApp(opts: FastifyServerOptions = {}): Promise<Fastify
     ...opts,
   });
 
-  // Security Headers (Section 9)
+  // Security Headers
   await app.register(helmet, {
     contentSecurityPolicy: {
       directives: {
@@ -33,6 +33,9 @@ export async function buildApp(opts: FastifyServerOptions = {}): Promise<Fastify
         scriptSrc: ["'self'", "'unsafe-inline'"],
         styleSrc: ["'self'", "'unsafe-inline'"],
         imgSrc: ["'self'", 'data:'],
+        // BUG-K FIX: connectSrc must include 'self' to allow the dashboard JS to call
+        // the API when they share the same origin, and allow the analytics API endpoint
+        // to be reachable from other origins via fetch (the CORS hook handles that separately).
         connectSrc: ["'self'"],
         frameAncestors: ["'none'"],
       },
@@ -43,21 +46,26 @@ export async function buildApp(opts: FastifyServerOptions = {}): Promise<Fastify
     referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
   });
 
-  // Support public cross-origin collection while strictly gating dashboard APIs
+  // BUG-K FIX: Unified public CORS handler for collection endpoints.
+  // This runs as an onRequest hook (before route handlers) and is the sole
+  // CORS authority for /api/v1/collect, /api/v1/performance, and /meow.js.
+  // @fastify/cors below only covers dashboard/management routes.
   app.addHook('onRequest', async (request, reply) => {
     const url = request.url.split('?')[0] || request.url;
-    const origin = request.headers.origin as string | undefined;
+    const isPublicEndpoint = url === '/api/v1/collect' || url === '/api/v1/performance' || url === '/meow.js';
 
-    if (origin && (url === '/api/v1/collect' || url === '/api/v1/performance' || url === '/meow.js')) {
-      reply.header('Access-Control-Allow-Origin', origin);
+    if (isPublicEndpoint) {
+      const origin = request.headers.origin as string | undefined;
+      // Reflect the specific origin for credentialed compatibility, or use * for anonymous tracking
+      const allowOrigin = origin || '*';
+      reply.header('Access-Control-Allow-Origin', allowOrigin);
       reply.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-      reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, x-admin-secret');
-      // BUG-13 FIX: Removed Access-Control-Allow-Credentials:true from collect/performance
-      // endpoints. Analytics event ingestion doesn't require credentialed cross-origin
-      // requests — the SDK sends visitor IDs in the payload body, not as cookies.
-      // Credentials:true with a reflected origin is an unnecessarily broad security posture.
+      reply.header('Access-Control-Allow-Headers', 'Content-Type');
+      reply.header('Vary', 'Origin');
+      // No credentials — analytics payload is sent in body, not cookies
 
       if (request.method === 'OPTIONS') {
+        reply.header('Access-Control-Max-Age', '86400');
         return reply.status(204).send();
       }
     }
