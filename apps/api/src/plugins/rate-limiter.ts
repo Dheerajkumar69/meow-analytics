@@ -62,9 +62,9 @@ export const rateLimiterPlugin: FastifyPluginAsync<RateLimiterOptions> = fp(
     });
 
     app.addHook('onRequest', async (request: FastifyRequest, reply: FastifyReply) => {
-      // Exclude health routes
+      // Exclude health and warm-up probe routes
       const url = request.url.split('?')[0] || request.url;
-      if (url === '/api/health' || url === '/api/ready') {
+      if (url === '/api/health' || url === '/api/ready' || url === '/api/ping') {
         return;
       }
 

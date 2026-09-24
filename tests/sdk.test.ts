@@ -47,6 +47,7 @@ describe('Meow Analytics Browser SDK', () => {
         pathname: '/home',
         hostname: 'test.example.com',
         origin: 'https://test.example.com',
+        href: 'https://test.example.com/home',
       },
       history: {
         pushState: vi.fn(),
@@ -98,6 +99,7 @@ describe('Meow Analytics Browser SDK', () => {
 
       // Simulate pushState to /movies
       window.location.pathname = '/movies';
+      (window.location as any).href = 'https://test.example.com/movies';
       window.history.pushState({}, '', '/movies');
 
       expect(onNavigate).toHaveBeenCalledTimes(1);
@@ -105,6 +107,7 @@ describe('Meow Analytics Browser SDK', () => {
 
       // Simulate pushState to /watch
       window.location.pathname = '/watch';
+      (window.location as any).href = 'https://test.example.com/watch';
       window.history.pushState({}, '', '/watch');
 
       expect(onNavigate).toHaveBeenCalledTimes(2);
@@ -121,10 +124,11 @@ describe('Meow Analytics Browser SDK', () => {
 
       // Navigation to /movies
       window.location.pathname = '/movies';
+      (window.location as any).href = 'https://test.example.com/movies';
       window.history.pushState({}, '', '/movies');
       expect(onNavigate).toHaveBeenCalledTimes(1);
 
-      // Re-trigger replaceState with the exact same path
+      // Re-trigger replaceState with the exact same path (href unchanged)
       window.history.replaceState({}, '', '/movies');
       window.history.pushState({}, '', '/movies');
 

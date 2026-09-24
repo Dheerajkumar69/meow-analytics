@@ -220,14 +220,27 @@ export function createEventQueue(config: MeowConfig): EventQueue {
   }
 
   function handleSendFailure(failedEvents: MeowEvent[], statusCode: number): void {
-    // Section 8: "Do not retry permanent 4xx errors."
-    // Permanent 4xx client errors (400 Bad Request, 401 Unauthorized, 403 Forbidden, 404 Not Found, 422 Unprocessable)
+    // Do not retry permanent 4xx client errors (400, 401, 403, 404, 422).
+    // These indicate a misconfiguration (wrong siteId, domain not allowed, etc.)
+    // and retrying will never succeed.
     if (statusCode >= 400 && statusCode < 500 && statusCode !== 429) {
       log(`Permanent error (${statusCode}) encountered; dropping ${failedEvents.length} event(s) without retry`);
       return;
     }
 
-    // Network error (status 0), rate-limited (429), or server error (5xx)
+    // 503 specifically means the server is starting up (e.g. Render/Railway free-tier cold start).
+    // Immediately persist to localStorage so events survive page navigation during the warm-up window.
+    if (statusCode === 503) {
+      log(
+        `Server returned 503 (likely cold start / spin-up). Saving ${failedEvents.length} event(s) to offline ` +
+        `storage — they will be resent once the server is reachable.`
+      );
+      saveToOfflineStorage(failedEvents);
+      // Don't add to retryQueue — the online/drainOfflineQueue mechanism will handle resend.
+      return;
+    }
+
+    // Network error (status 0), rate-limited (429), or other server error (5xx).
     log(`Temporary ingestion failure (status: ${statusCode}); scheduling retry with backoff & jitter`);
 
     // Add to retry queue with attempt counter
@@ -240,13 +253,19 @@ export function createEventQueue(config: MeowConfig): EventQueue {
       }
     }
 
-    // Filter out items that exceeded max retries (e.g. 3 attempts)
+    // Allow up to 6 retry attempts (covers ~63s total window with exponential backoff).
+    // Render/Railway free tier cold starts can take up to 45-60s — 3 attempts (~17s) was
+    // not enough. 6 attempts gives: 1s + 2s + 4s + 8s + 16s + 32s ≈ 63s total.
+    const MAX_RETRIES = 6;
     const validRetries: { event: MeowEvent; attempts: number }[] = [];
     for (const item of retryQueue) {
-      if (item.attempts <= 3) {
+      if (item.attempts <= MAX_RETRIES) {
         validRetries.push(item);
       } else {
-        log(`Max retries exceeded for event ${item.event.eventId}; discarding`);
+        // Max retries exceeded — save to offline storage instead of discarding.
+        // This preserves the events for future sessions when the server is back.
+        log(`Max retries (${MAX_RETRIES}) exceeded for event ${item.event.eventId}; persisting to offline storage`);
+        saveToOfflineStorage([item.event]);
       }
     }
     retryQueue = validRetries;
@@ -271,12 +290,14 @@ export function createEventQueue(config: MeowConfig): EventQueue {
     // Find highest attempt count
     const maxAttempt = retryQueue.reduce((max, item) => Math.max(max, item.attempts), 1);
 
-    // Exponential backoff: base 1000ms * 2^(attempts-1) with random jitter
+    // Exponential backoff: base 1000ms * 2^(attempts-1) + jitter.
+    // Cap raised to 60s (from 10s) to accommodate server cold-start scenarios
+    // where the server may take 30-60s to become available (e.g. Render free tier).
     const baseDelay = 1000 * Math.pow(2, maxAttempt - 1);
-    const jitter = Math.random() * 500;
-    const delay = Math.min(baseDelay + jitter, 10000);
+    const jitter = Math.random() * 1000;
+    const delay = Math.min(baseDelay + jitter, 60_000);
 
-    log(`Scheduling retry in ${Math.round(delay)}ms (attempt ${maxAttempt})`);
+    log(`Scheduling retry in ${Math.round(delay)}ms (attempt ${maxAttempt} of 6)`);
 
     retryTimer = setTimeout(() => {
       retryTimer = null;
@@ -314,9 +335,14 @@ export function createEventQueue(config: MeowConfig): EventQueue {
   // --- Browser Lifecycle Listeners ---
 
   function handleVisibilityChange(): void {
-    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+    if (typeof document === 'undefined') return;
+    if (document.visibilityState === 'hidden') {
       log('Page hidden; flushing pending events via beacon');
       flush(true).catch(() => {});
+    } else if (document.visibilityState === 'visible') {
+      // When user returns to the tab, drain offline storage.
+      // This resends events that were persisted during a server cold-start or network failure.
+      drainOfflineQueue();
     }
   }
 
@@ -337,7 +363,7 @@ export function createEventQueue(config: MeowConfig): EventQueue {
     window.addEventListener('pagehide', handlePageHide);
     window.addEventListener('online', handleOnline);
 
-    // Drain any leftover events from previous offline sessions
+    // Drain any leftover events from previous offline sessions or cold-start failures
     drainOfflineQueue();
   }
 

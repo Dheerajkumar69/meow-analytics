@@ -208,20 +208,21 @@ describe('Phase 3 — Session System, Timeouts & Bounce Tracking', () => {
       SELECT session_id, page_views, is_returning, landing_page
       FROM sessions
       WHERE site_id = ${siteId}
+        AND visitor_id = (
+          SELECT id FROM visitors WHERE site_id = ${siteId} AND anonymous_id = ${visitorId} LIMIT 1
+        )
       ORDER BY started_at ASC
     `);
 
-    // Must have created 2 distinct session records
-    const userSessions = allUserSessions.rows.filter((r: any) =>
-      (r.session_id as string).includes(session1Id)
-    );
+    // Must have created 2 distinct session records for this visitor
+    const userSessions = allUserSessions.rows as any[];
     expect(userSessions.length).toBe(2);
 
     // First session: is_returning = false
     expect(userSessions[0].is_returning).toBe(false);
     expect(userSessions[0].landing_page).toBe('/session-1-page');
 
-    // Second session: is_returning = true
+    // Second session: is_returning = true (visitor came back after >30 min gap)
     expect(userSessions[1].is_returning).toBe(true);
     expect(userSessions[1].landing_page).toBe('/session-2-page');
   });
@@ -303,8 +304,10 @@ describe('Phase 3 — Session System, Timeouts & Bounce Tracking', () => {
     expect(rows.length).toBe(1);
     const s = rows[0]!;
     expect(s.page_views).toBe(1); // Page views still 1!
-    expect(s.event_count).toBe(3); // 1 page_view + 2 pings
+    // Ping events are keep-alive signals (BUG-23 FIX): they do NOT increment event_count.
+    // Only qualifying interactions (page_view, custom events) count.
+    expect(s.event_count).toBe(1); // Only the initial page_view is counted
     expect(s.is_bounce).toBe(true); // Still a bounce because only 1 page view
-    expect(s.duration_seconds).toBe(120); // 120 seconds duration recorded!
+    expect(s.duration_seconds).toBe(120); // 120 seconds duration recorded via last_seen_at update!
   });
 });

@@ -3,6 +3,16 @@ import { checkDatabaseHealth } from '@meow-analytics/database';
 import { getConfig } from '@meow-analytics/config';
 
 export const healthRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
+  // Ultra-lightweight warm-up probe: no auth, no DB, CORS open.
+  // Use this URL with a free uptime monitor (UptimeRobot, BetterStack, etc.)
+  // to ping every 5 minutes and prevent Render/Railway free-tier cold starts.
+  // e.g. https://meow-analytics-api.onrender.com/api/ping
+  app.get('/api/ping', async (request, reply) => {
+    reply.header('Access-Control-Allow-Origin', '*');
+    reply.header('Cache-Control', 'no-store');
+    return reply.status(200).send({ pong: true, t: Date.now() });
+  });
+
   // Liveness check: Is the API process up and running?
   app.get('/api/health', async (request, reply) => {
     return reply.status(200).send({

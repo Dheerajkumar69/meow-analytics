@@ -74,6 +74,7 @@ describe('Phase 2 Acceptance Test — Full End-to-End Ingestion Flow', () => {
         pathname: '/',
         hostname: siteDomain,
         origin: `https://${siteDomain}`,
+        href: `https://${siteDomain}/`,
       },
       history: {
         pushState: vi.fn(),
@@ -139,14 +140,17 @@ describe('Phase 2 Acceptance Test — Full End-to-End Ingestion Flow', () => {
 
     // 2. SPA navigate to /movies
     window.location.pathname = '/movies';
+    (window.location as any).href = `https://${siteDomain}/movies`;
     window.history.pushState({}, '', '/movies');
 
     // 3. SPA navigate to /search
     window.location.pathname = '/search';
+    (window.location as any).href = `https://${siteDomain}/search`;
     window.history.pushState({}, '', '/search');
 
     // 4. SPA navigate to /watch
     window.location.pathname = '/watch';
+    (window.location as any).href = `https://${siteDomain}/watch`;
     window.history.pushState({}, '', '/watch');
 
     // Flush batch to database
@@ -169,6 +173,7 @@ describe('Phase 2 Acceptance Test — Full End-to-End Ingestion Flow', () => {
 
     // Step 2: Reloading / re-navigating to /movies creates a new page view
     window.location.pathname = '/movies';
+    (window.location as any).href = `https://${siteDomain}/movies`;
     window.history.pushState({}, '', '/movies');
     await queue.flush();
 
@@ -184,6 +189,7 @@ describe('Phase 2 Acceptance Test — Full End-to-End Ingestion Flow', () => {
     // Step 3: SPA navigation to the EXACT SAME path (/movies while on /movies) must NOT create duplicate page views
     window.history.replaceState({}, '', '/movies');
     window.history.pushState({}, '', '/movies');
+    // href remains https://{siteDomain}/movies — no change, so no new navigation event
     await queue.flush();
 
     const rowsAfterDuplicateCheck = await db

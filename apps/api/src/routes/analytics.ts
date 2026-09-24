@@ -1666,16 +1666,16 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
 
     const toDate = toQuery ? new Date(toQuery) : new Date();
     const fromDate = fromQuery ? new Date(fromQuery) : new Date(toDate.getTime() - 30 * 24 * 60 * 60 * 1000);
-    const botFilter = includeBots ? sql`` : sql`AND is_bot = FALSE`;
     const pvFilter = buildPageViewsFilterSql(filters);
 
+    // Non-bot page views for total and regular device rows
     const totalRes = await db.execute(sql`
       SELECT COUNT(DISTINCT visitor_id) AS total_visitors
       FROM page_views
       WHERE site_id = ${siteId}
         AND timestamp >= ${fromDate}
         AND timestamp <= ${toDate}
-        ${botFilter}
+        AND is_bot = FALSE
         ${pvFilter}
     `);
     const totalVisitors = Number((totalRes.rows[0] as any)?.total_visitors || 0);
@@ -1690,17 +1690,17 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
       WHERE site_id = ${siteId}
         AND timestamp >= ${fromDate}
         AND timestamp <= ${toDate}
-        ${botFilter}
+        AND is_bot = FALSE
         ${pvFilter}
       GROUP BY device
       ORDER BY visitors DESC, page_views DESC
     `);
 
-    const devices = rowsRes.rows.map((r: any) => {
+    const deviceRows = rowsRes.rows.map((r: any) => {
       const visitors = Number(r.visitors || 0);
       const percentage = totalVisitors > 0 ? Number(((visitors / totalVisitors) * 100).toFixed(1)) : 0;
       return {
-        device: r.device,
+        device: r.device as string,
         visitors,
         sessions: Number(r.sessions || 0),
         pageViews: Number(r.page_views || 0),
@@ -1708,13 +1708,43 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
       };
     });
 
+    // When includeBots=true, add bot entries from the events table.
+    // Bots are never stored in page_views or sessions; they only exist in events.
+    if (includeBots) {
+      const botRes = await db.execute(sql`
+        SELECT
+          'bot' AS device,
+          COUNT(DISTINCT visitor_id) AS visitors,
+          COUNT(DISTINCT session_id) AS sessions,
+          COUNT(*) AS page_views
+        FROM events
+        WHERE site_id = ${siteId}
+          AND timestamp >= ${fromDate}
+          AND timestamp <= ${toDate}
+          AND is_bot = TRUE
+          AND type = 'page_view'
+      `);
+      const botRow = botRes.rows[0] as any;
+      const botVisitors = Number(botRow?.visitors || 0);
+      if (botVisitors > 0) {
+        deviceRows.push({
+          device: 'bot',
+          visitors: botVisitors,
+          sessions: Number(botRow?.sessions || 0),
+          pageViews: Number(botRow?.page_views || 0),
+          percentage: 0, // Bots are excluded from the real-user percentage calculation
+        });
+      }
+    }
+
     return reply.send({
       siteId,
       timeRange: { from: fromDate.toISOString(), to: toDate.toISOString() },
       totalVisitors,
-      devices,
+      devices: deviceRows,
     });
   };
+
 
   // Section 14: Browser Breakdown
   const handleBrowsers = async (request: any, reply: any) => {

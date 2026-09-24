@@ -398,28 +398,24 @@ export const PerformanceView: React.FC<PerformanceViewProps> = ({ project }) => 
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-          {/* Time Range Selector */}
-          <div
-            style={{
-              display: 'flex',
-              backgroundColor: 'var(--color-surface-subtle)',
-              padding: '2px',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--color-border)',
+          {/* Date Range Selector */}
+          <DateRangeSelector
+            preset={dateRangePreset}
+            customFrom={customFrom}
+            customTo={customTo}
+            onPresetChange={(p) => {
+              setDateRangePreset(p);
+              setCustomFrom(undefined);
+              setCustomTo(undefined);
+              updateDashboardUrlState({ range: p });
             }}
-          >
-            {(['24h', '7d', '30d'] as const).map((range) => (
-              <button
-                key={range}
-                type="button"
-                className={`btn btn-sm ${timeRange === range ? 'btn-primary' : 'btn-ghost'}`}
-                onClick={() => setTimeRange(range)}
-                style={{ padding: '4px 12px', fontSize: '0.75rem' }}
-              >
-                {range === '24h' ? '24 Hours' : range === '7d' ? '7 Days' : '30 Days'}
-              </button>
-            ))}
-          </div>
+            onCustomDateChange={(f, t) => {
+              setDateRangePreset('custom');
+              setCustomFrom(f);
+              setCustomTo(t);
+              updateDashboardUrlState({ range: 'custom', from: f, to: t });
+            }}
+          />
 
           <button
             type="button"
