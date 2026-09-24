@@ -58,9 +58,13 @@ export function getDatabase(connectionUrl?: string): DatabaseInstance {
     url.includes('ssl=true') ||
     (isProduction && !url.includes('localhost') && !url.includes('127.0.0.1'));
 
+  const maxPool = process.env.DATABASE_POOL_MAX
+    ? parseInt(process.env.DATABASE_POOL_MAX, 10)
+    : (isProduction ? 25 : 10);
+
   poolInstance = new Pool({
     connectionString: url,
-    max: 10,
+    max: maxPool,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 5000,
     ssl: isSslRequired ? { rejectUnauthorized: false } : undefined,

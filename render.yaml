@@ -11,7 +11,7 @@ services:
     plan: free
     region: oregon
     buildCommand: npm install && npm run build:api
-    startCommand: npm run start -w @meow-analytics/api
+    startCommand: npm run db:migrate && npm run start -w @meow-analytics/api
     healthCheckPath: /api/health
     autoDeploy: true
     envVars:
@@ -33,6 +33,10 @@ services:
         value: "*" # Set to specific dashboard/tracking domains in production
       - key: LOG_LEVEL
         value: info
+      - key: ASYNC_INGESTION
+        value: "true"
+      - key: DATABASE_POOL_MAX
+        value: "20"
       - key: RATE_LIMIT_ENABLED
         value: "true"
       - key: GEOIP_DATABASE

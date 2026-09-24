@@ -2222,18 +2222,31 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
         const pStart = new Date(cStart.getTime() + p * periodMs);
         const pEnd = new Date(cEnd.getTime() + p * periodMs);
 
-        // BUG-16 FIX: Use the pre-fetched visIds array with ANY() instead of a correlated
-        // IN (SELECT ...) subquery. This avoids re-executing the visitors subquery on each
-        // (cohort x period) iteration and improves index scan efficiency in PostgreSQL.
-        const retRes = visIds.length > 0 ? await db.execute(sql`
-          SELECT COUNT(DISTINCT visitor_id) AS returning_count
-          FROM sessions
-          WHERE site_id = ${siteId}
-            AND started_at >= ${pStart}
-            AND started_at < ${pEnd}
-            AND is_bot = FALSE
-            AND visitor_id = ANY(${sql.raw(`ARRAY[${visIds.map(id => `'${id.replace(/'/g, "''")}'`).join(',')}]`)})
-        `) : { rows: [{ returning_count: 0 }] };
+        // For small cohorts use ANY(array); for large cohorts (>200) use subquery to avoid massive SQL string allocations
+        const retRes = visIds.length > 0 ? (
+          visIds.length <= 200 ? await db.execute(sql`
+            SELECT COUNT(DISTINCT visitor_id) AS returning_count
+            FROM sessions
+            WHERE site_id = ${siteId}
+              AND started_at >= ${pStart}
+              AND started_at < ${pEnd}
+              AND is_bot = FALSE
+              AND visitor_id = ANY(${sql.raw(`ARRAY[${visIds.map(id => `'${id.replace(/'/g, "''")}'`).join(',')}]`)})
+          `) : await db.execute(sql`
+            SELECT COUNT(DISTINCT s.visitor_id) AS returning_count
+            FROM sessions s
+            WHERE s.site_id = ${siteId}
+              AND s.started_at >= ${pStart}
+              AND s.started_at < ${pEnd}
+              AND s.is_bot = FALSE
+              AND s.visitor_id IN (
+                SELECT v.id FROM visitors v
+                WHERE v.site_id = ${siteId}
+                  AND v.first_seen_at >= ${cStart}
+                  AND v.first_seen_at < ${cEnd}
+              )
+          `)
+        ) : { rows: [{ returning_count: 0 }] };
 
         const returning = Number((retRes.rows[0] as any)?.returning_count || 0);
         const percentage = Number(((returning / cohortSize) * 100).toFixed(1));

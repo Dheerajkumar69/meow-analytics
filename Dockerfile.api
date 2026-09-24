@@ -1,0 +1,49 @@
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Copy package manifests and root configurations
+COPY package.json package-lock.json tsconfig.json tsconfig.base.json ./
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/config/package.json ./packages/config/
+COPY packages/database/package.json ./packages/database/
+COPY packages/sdk/package.json ./packages/sdk/
+COPY packages/react/package.json ./packages/react/
+COPY apps/api/package.json ./apps/api/
+COPY apps/dashboard/package.json ./apps/dashboard/
+
+# Install all dependencies including devDependencies for build
+RUN npm ci
+
+# Copy full source
+COPY packages/ ./packages/
+COPY apps/api/ ./apps/api/
+
+# Build internal packages and API
+RUN npm run build -w @meow-analytics/shared && \
+    npm run build -w @meow-analytics/config && \
+    npm run build -w @meow-analytics/database && \
+    npm run build -w @meow-analytics/sdk && \
+    npm run build -w @meow-analytics/api
+
+# Production Runner Stage
+FROM node:20-alpine AS runner
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV HOST=0.0.0.0
+ENV PORT=3001
+
+# Copy built artifacts and package manifests
+COPY package.json package-lock.json tsconfig.json tsconfig.base.json ./
+COPY packages/ ./packages/
+COPY apps/api/ ./apps/api/
+
+# Install production dependencies
+RUN npm ci --omit=dev
+
+EXPOSE 3001
+
+# Run database migrations on boot then start API
+CMD ["sh", "-c", "npm run db:migrate && npm run start -w @meow-analytics/api"]

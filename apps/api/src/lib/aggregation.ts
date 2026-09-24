@@ -138,30 +138,48 @@ export async function runDailyAggregation(options: AggregationOptions = {}): Pro
   let totalAggregated = 0;
 
   for (const site_id of siteIds) {
-    const rows = await db.execute(sql`
-      SELECT
-        date_trunc('day', h.bucket_time) as bucket_date,
-        SUM(h.page_views)::int as page_views,
-        -- BUG-6 FIX: Use SUM(h.visitors) instead of MAX(h.visitors).
-        -- MAX only returned the single busiest hour's visitors, not the daily total.
-        -- SUM is an approximation (same visitor in multiple hours is counted N times),
-        -- but it is always >= actual unique visitors and consistent with timeseries.
-        -- For fully accurate daily uniques, query sessions/events directly.
-        SUM(h.visitors)::int as visitors,
-        SUM(h.sessions)::int as sessions,
-        SUM(h.events)::int as events,
-        SUM(h.bounces)::int as bounces,
-        SUM(h.duration_seconds)::int as duration_seconds
-      FROM hourly_aggregates h
-      WHERE h.site_id = ${site_id}
-        AND h.bucket_time <= ${upTo}
-        ${sinceSql}
-      GROUP BY date_trunc('day', h.bucket_time)
-      ORDER BY bucket_date ASC
-    `);
+    const [rows, sessionVisitorRows] = await Promise.all([
+      db.execute(sql`
+        SELECT
+          date_trunc('day', h.bucket_time) as bucket_date,
+          SUM(h.page_views)::int as page_views,
+          SUM(h.visitors)::int as fallback_visitors,
+          SUM(h.sessions)::int as sessions,
+          SUM(h.events)::int as events,
+          SUM(h.bounces)::int as bounces,
+          SUM(h.duration_seconds)::int as duration_seconds
+        FROM hourly_aggregates h
+        WHERE h.site_id = ${site_id}
+          AND h.bucket_time <= ${upTo}
+          ${sinceSql}
+        GROUP BY date_trunc('day', h.bucket_time)
+        ORDER BY bucket_date ASC
+      `),
+      db.execute(sql`
+        SELECT
+          date_trunc('day', s.started_at) as bucket_date,
+          COUNT(DISTINCT s.visitor_id)::int as unique_visitors
+        FROM sessions s
+        WHERE s.site_id = ${site_id}
+          AND s.started_at <= ${upTo}
+          AND s.is_bot = FALSE
+          ${since ? sql`AND s.started_at >= ${since}` : sql``}
+        GROUP BY date_trunc('day', s.started_at)
+      `),
+    ]);
+
+    const dailyVisitorMap = new Map<string, number>();
+    for (const sv of (sessionVisitorRows.rows || []) as any[]) {
+      if (sv.bucket_date) {
+        const key = new Date(sv.bucket_date).toISOString().split('T')[0]!;
+        dailyVisitorMap.set(key, Number(sv.unique_visitors || 0));
+      }
+    }
 
     for (const r of rows.rows as any[]) {
       const bucketDate = new Date(r.bucket_date);
+      const dateKey = bucketDate.toISOString().split('T')[0]!;
+      const trueVisitors = dailyVisitorMap.get(dateKey) ?? Number(r.fallback_visitors || 0);
       const id = `da_${generateId()}`;
 
       await db.execute(sql`
@@ -169,7 +187,7 @@ export async function runDailyAggregation(options: AggregationOptions = {}): Pro
           id, site_id, bucket_date, page_views, visitors, sessions, events, bounces, duration_seconds, updated_at
         ) VALUES (
           ${id}, ${site_id}, ${bucketDate},
-          ${Number(r.page_views || 0)}, ${Number(r.visitors || 0)}, ${Number(r.sessions || 0)},
+          ${Number(r.page_views || 0)}, ${trueVisitors}, ${Number(r.sessions || 0)},
           ${Number(r.events || 0)}, ${Number(r.bounces || 0)}, ${Number(r.duration_seconds || 0)}, NOW()
         )
         ON CONFLICT (site_id, bucket_date) DO UPDATE SET
