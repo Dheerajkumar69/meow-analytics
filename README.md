@@ -115,4 +115,5 @@ npm run dev
 * [Data Retention & Cleanup Policy](file:///mnt/slow/actualprojects/meow-analytics/DATA_RETENTION.md)
 * [Privacy & IP Minimization Policy](file:///mnt/slow/actualprojects/meow-analytics/PRIVACY.md)
 * [Security Model & Threat Defenses](file:///mnt/slow/actualprojects/meow-analytics/SECURITY.md)
-* [Production Deployment Blueprint](file:///mnt/slow/actualprojects/meow-analytics/DEPLOYMENT.md)
+* [24/7 VM Production Deployment Guide](file:///mnt/slow/actualprojects/meow-analytics/VM_DEPLOYMENT.md) — Self-hosted 24/7 continuous uptime (No waker required)
+* [Production Deployment Blueprint (Render Free)](file:///mnt/slow/actualprojects/meow-analytics/DEPLOYMENT.md)

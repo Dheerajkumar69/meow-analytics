@@ -19,6 +19,9 @@ RUN npm ci
 COPY packages/ ./packages/
 COPY apps/dashboard/ ./apps/dashboard/
 
+ARG VITE_API_URL=""
+ENV VITE_API_URL=$VITE_API_URL
+
 # Build shared packages and dashboard Vite bundle
 RUN npm run build -w @meow-analytics/shared && \
     npm run build -w @meow-analytics/dashboard

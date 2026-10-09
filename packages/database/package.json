@@ -16,8 +16,10 @@
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist",
     "db:generate": "drizzle-kit generate:pg",
-    "db:migrate": "tsx src/migrate.ts",
-    "db:seed": "tsx src/seed.ts"
+    "db:migrate": "node dist/migrate.js",
+    "db:migrate:dev": "tsx src/migrate.ts",
+    "db:seed": "node dist/seed.js",
+    "db:seed:dev": "tsx src/seed.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.2.14",

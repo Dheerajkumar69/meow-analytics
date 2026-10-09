@@ -1,0 +1,22 @@
+{
+    email {$CADDY_EMAIL}
+}
+
+{$DOMAIN:localhost} {
+    encode gzip zstd
+
+    # Fastify API reverse proxy
+    handle /api/* {
+        reverse_proxy api:3001
+    }
+
+    # Tracking SDK script reverse proxy
+    handle /meow.js {
+        reverse_proxy api:3001
+    }
+
+    # Dashboard Single Page Application
+    handle {
+        reverse_proxy dashboard:80
+    }
+}
