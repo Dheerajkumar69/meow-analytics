@@ -117,3 +117,13 @@ npm run dev
 * [Security Model & Threat Defenses](file:///mnt/slow/actualprojects/meow-analytics/SECURITY.md)
 * [24/7 VM Production Deployment Guide](file:///mnt/slow/actualprojects/meow-analytics/VM_DEPLOYMENT.md) — Self-hosted 24/7 continuous uptime (No waker required)
 * [Production Deployment Blueprint (Render Free)](file:///mnt/slow/actualprojects/meow-analytics/DEPLOYMENT.md)
+
+
+tracker
+<!-- Meow Analytics Tracker -->
+<script
+  defer
+  src="http://analytics.8.234.117.34.sslip.io/meow.js"
+  data-site-id="site_83yb70876urx"
+  data-auto-track="true">
+</script>
