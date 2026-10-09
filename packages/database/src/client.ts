@@ -52,11 +52,20 @@ export function getDatabase(connectionUrl?: string): DatabaseInstance {
     return dbInstance;
   }
 
+  const isSslExplicitlyDisabled =
+    process.env.DATABASE_SSL === 'false' ||
+    url.includes('sslmode=disable') ||
+    url.includes('ssl=false');
+
   const isSslRequired =
-    process.env.DATABASE_SSL === 'true' ||
-    url.includes('sslmode=require') ||
-    url.includes('ssl=true') ||
-    (isProduction && !url.includes('localhost') && !url.includes('127.0.0.1'));
+    !isSslExplicitlyDisabled &&
+    (process.env.DATABASE_SSL === 'true' ||
+      url.includes('sslmode=require') ||
+      url.includes('ssl=true') ||
+      (isProduction &&
+        !url.includes('localhost') &&
+        !url.includes('127.0.0.1') &&
+        !url.includes('@postgres:')));
 
   const maxPool = process.env.DATABASE_POOL_MAX
     ? parseInt(process.env.DATABASE_POOL_MAX, 10)
