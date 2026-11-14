@@ -158,12 +158,20 @@ describe('Phase 3 — Session System, Timeouts & Bounce Tracking', () => {
   it('3. Inactivity timeout: event arriving > 30 minutes after last activity spawns a NEW session and marks returning visitor', async () => {
     const visitorId = `mv_timeout_user_${Date.now()}`;
     const session1Id = `ms_timeout_s1_${Date.now()}`;
-    const t0 = new Date('2026-09-20T10:00:00Z').getTime();
+    // Use a recent base time: 60 minutes ago (within the 30-day validation window)
+    // t0 is 60 min ago, t1 is 15 min ago — gap of 45 min > 30 min timeout
+    const t0 = Date.now() - 60 * 60 * 1000; // 60 minutes ago
 
-    // Session 1: Activity at 10:00:00
+    const REAL_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+    // x-meow-sync: true forces synchronous flush — required for test assertions
+    const SYNC_HEADER = { 'User-Agent': REAL_UA, 'x-meow-sync': 'true' };
+
+    // Session 1: Activity at t0 (now-60min), session 2 arrives at t1 (now-15min).
+    // Gap = 45 min > 30 min timeout → backend MUST spawn a new session.
     await app.inject({
       method: 'POST',
       url: '/api/v1/collect',
+      headers: SYNC_HEADER,
       payload: {
         siteId,
         events: [
@@ -181,11 +189,12 @@ describe('Phase 3 — Session System, Timeouts & Bounce Tracking', () => {
       },
     });
 
-    // Event 2 arrives at 10:45:00 (> 30 minutes idle) using same session ID token
+    // Event 2 arrives 45 min later using same session ID token (> 30 min timeout → new session)
     const t1 = t0 + 45 * 60 * 1000;
     await app.inject({
       method: 'POST',
       url: '/api/v1/collect',
+      headers: SYNC_HEADER,
       payload: {
         siteId,
         events: [
@@ -197,12 +206,11 @@ describe('Phase 3 — Session System, Timeouts & Bounce Tracking', () => {
             hostname: 'example.com',
             referrer: '',
             visitorId,
-            sessionId: session1Id, // Reusing client token, but expired
+            sessionId: session1Id, // Reusing client token, but expired — backend must spawn new session
           },
         ],
       },
     });
-
     const db = getDatabase();
     const allUserSessions = await db.execute(sql`
       SELECT session_id, page_views, is_returning, landing_page

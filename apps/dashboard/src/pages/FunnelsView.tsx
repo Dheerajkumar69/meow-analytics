@@ -147,7 +147,7 @@ export const FunnelsView: React.FC<FunnelsViewProps> = ({ project }) => {
             preset={dateRangePreset}
             customFrom={customFrom}
             customTo={customTo}
-            comparison={comparison}
+            compare={comparison}
             onPresetChange={(p) => {
               setDateRangePreset(p);
               setCustomFrom(undefined);
