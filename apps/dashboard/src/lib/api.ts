@@ -480,7 +480,17 @@ class ApiClient {
         headers,
       });
 
-      const data = await res.json().catch(() => null);
+      let data = await res.json().catch(() => null);
+
+      if (res.status === 401 && this.secret !== defaultSecret) {
+        this.secret = defaultSecret;
+        localStorage.setItem('meow_admin_secret', defaultSecret);
+        headers['Authorization'] = `Bearer ${defaultSecret}`;
+        const retryRes = await fetch(url, { ...options, headers });
+        if (retryRes.ok) {
+          return (await retryRes.json().catch(() => null)) as T;
+        }
+      }
 
       if (!res.ok) {
         const errMessage = data?.error?.message || `HTTP ${res.status}: ${res.statusText}`;

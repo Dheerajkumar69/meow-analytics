@@ -16,11 +16,13 @@ export const EmptyAnalytics: React.FC<EmptyAnalyticsProps> = ({
   onRefresh,
 }) => {
   const [activeTab, setActiveTab] = useState<'html' | 'react' | 'node'>('html');
+  const [customHost, setCustomHost] = useState('');
   const [copied, setCopied] = useState(false);
   const [checking, setChecking] = useState(false);
 
   const siteId = project?.site_id || 'site_your_project_id';
-  const apiOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://analytics.example.com';
+  const defaultOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://analytics.example.com';
+  const apiOrigin = (customHost.trim() || defaultOrigin).replace(/\/$/, '');
 
   const htmlSnippet = `<script
   defer
@@ -136,6 +138,43 @@ await meow.trackEvent('checkout_completed', {
               textAlign: 'left',
             }}
           >
+            {/* Host override input for deployed websites */}
+            <div
+              style={{
+                marginBottom: 'var(--space-3)',
+                padding: 'var(--space-3)',
+                backgroundColor: 'var(--color-surface-subtle)',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--color-border)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 'var(--space-2)',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
+                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>
+                  API Host / Script URL:
+                </label>
+                {apiOrigin.includes('localhost') && (
+                  <span style={{ fontSize: '0.7rem', color: '#f59e0b', fontWeight: 500 }}>
+                    ⚠️ For deployed HTTPS sites (Vercel, etc.), use an HTTPS URL or tunnel
+                  </span>
+                )}
+              </div>
+              <input
+                type="text"
+                placeholder={`e.g. https://your-meow-api.onrender.com or ${defaultOrigin}`}
+                value={customHost}
+                onChange={(e) => setCustomHost(e.target.value)}
+                className="input"
+                style={{
+                  fontSize: '0.8125rem',
+                  padding: '6px 12px',
+                  fontFamily: 'monospace',
+                }}
+              />
+            </div>
+
             {/* Snippet Tabs */}
             <div
               style={{

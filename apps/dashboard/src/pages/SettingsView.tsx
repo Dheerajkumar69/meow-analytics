@@ -95,7 +95,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 'var(--space-2)', borderBottom: '1px solid var(--color-border)' }}>
               <span style={{ color: 'var(--color-text-secondary)', fontWeight: 600 }}>Collector Ingest Endpoint</span>
-              <code className="code-inline">POST /api/v1/event</code>
+              <code className="code-inline">POST /api/v1/collect</code>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

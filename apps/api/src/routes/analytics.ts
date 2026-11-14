@@ -1974,6 +1974,8 @@ export const analyticsRoutes: FastifyPluginAsync = async (fastify: FastifyInstan
 
   fastify.get('/analytics/live', handleLive);
   fastify.get('/api/v1/analytics/live', handleLive);
+  fastify.get('/analytics/realtime', handleLive);
+  fastify.get('/api/v1/analytics/realtime', handleLive);
 
   fastify.get('/analytics/overview', handleOverview);
   fastify.get('/api/v1/analytics/overview', handleOverview);

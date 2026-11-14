@@ -71,11 +71,30 @@ export const App: React.FC = () => {
       const list = await api.getProjects();
       setProjects(list);
       if (list.length > 0) {
-        setSelectedProject((prev) => (prev ? list.find((p) => p.id === prev.id) || list[0]! : list[0]!));
+        const savedId = typeof localStorage !== 'undefined' ? localStorage.getItem('meow_selected_project_id') : null;
+        setSelectedProject((prev) => {
+          if (prev) {
+            return list.find((p) => p.id === prev.id) || list[0]!;
+          }
+          if (savedId) {
+            const match = list.find((p) => p.id === savedId || p.site_id === savedId);
+            if (match) return match;
+          }
+          return list[0]!;
+        });
       }
     } catch (err) {
       console.warn('Could not load projects on startup (API may require admin secret or be starting):', err);
     }
+  };
+
+  const handleSelectProject = (project: Project) => {
+    setSelectedProject(project);
+    try {
+      if (project?.id) {
+        localStorage.setItem('meow_selected_project_id', project.id);
+      }
+    } catch {}
   };
 
   const handleToggleTheme = () => {
@@ -128,7 +147,7 @@ export const App: React.FC = () => {
         <TopNav
           projects={projects}
           selectedProject={selectedProject}
-          onSelectProject={setSelectedProject}
+          onSelectProject={handleSelectProject}
           onOpenCreateProject={() => setIsCreateProjectOpen(true)}
           theme={theme}
           onToggleTheme={handleToggleTheme}
